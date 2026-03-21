@@ -71,19 +71,92 @@ main:
 ```bash
 go build ./...                                    # compile this project
 go test -count=1 ./...                            # run all tests
-go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_simulation.yaml
-go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_inference.yaml
 ./dat/fetch_fingertips.sh                         # download Fingertips AMR data
 python3 dat/prepare_baseline.py                   # prepare baseline event rates
+python3 dat/prepare_sbi_data.py                   # format data for inference
 python3 dat/explore.py                            # exploratory analysis plots
+go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_simulation.yaml
+go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_inference.yaml
 python3 dat/plot_inference.py                     # plot inference results
 python3 dat/plot_validation.py                    # plot validation comparison
-go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_policy_baseline.yaml
-go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_policy_cycling.yaml
-go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_policy_threshold.yaml
-go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_policy_restriction.yaml
+python3 dat/run_policy_evaluation.py              # run 4 policies × 10 seeds
 python3 dat/plot_policy_comparison.py             # plot policy comparison
 ```
+
+## Project-Specific Iterations
+
+### `ColonisationDynamicsIteration` (`pkg/amr/colonisation.go`)
+
+Two-strain (S/R) Euler-Maruyama SDE tracking colonisation fractions. Reads prescribing rate from an upstream partition (`prescribing_partition` param) or a direct `prescribing_rate` param. Supports a `learned_params` vector `[transmission_rate, selection_coefficient, fitness_cost, community_resistant_prevalence]` wired from the inference posterior.
+
+State: `[susceptible_fraction, resistant_fraction]`
+
+### `InfectionProcessIteration` (`pkg/amr/infection.go`)
+
+Converts colonisation fractions to BSI counts via Poisson sampling. Reads from an upstream colonisation partition (`colonisation_partition` param).
+
+State: `[susceptible_bsi_count, resistant_bsi_count]`
+
+### Policy Iterations
+
+All output `[cephalosporin_rate]` (state width 1), drop-in replacements for partition 0:
+
+| Iteration | Source | Key Params |
+|-----------|--------|------------|
+| `CyclingPrescribingIteration` | `pkg/amr/cycling.go` | `high_rate`, `low_rate`, `cycle_period` |
+| `ThresholdPrescribingIteration` | `pkg/amr/threshold.go` | `default_rate`, `escalation_rate`, `resistance_threshold`, `colonisation_partition` |
+| `RestrictionPrescribingIteration` | `pkg/amr/restriction.go` | `initial_rate`, `target_rate`, `ramp_period` |
+
+### `NewDataReplayIteration` (`pkg/amr/data_replay.go`)
+
+Helper function that loads a JSON file containing `[][]float64` data and returns a cycling `FromStorageIteration`. Used in YAML `extra_vars` to feed real time-varying data into inference configs:
+
+```yaml
+extra_vars:
+- myIter: "amr.NewDataReplayIteration(\"./dat/sbi_observed_resistance.json\", 1001)"
+```
+
+## YAML Config Files
+
+| Config | Purpose |
+|--------|---------|
+| `cfg/amr_simulation.yaml` | Forward simulation with constant prescribing |
+| `cfg/amr_inference.yaml` | SBI: learns 4 parameters from surveillance data (10 partitions + embedded sim) |
+| `cfg/amr_policy_baseline.yaml` | Constant prescribing policy |
+| `cfg/amr_policy_cycling.yaml` | Quarterly cycling policy |
+| `cfg/amr_policy_threshold.yaml` | Adaptive threshold escalation policy |
+| `cfg/amr_policy_restriction.yaml` | Ramp-down restriction policy |
+
+### Inference Config Structure
+
+The inference config (`cfg/amr_inference.yaml`) has 10 outer partitions:
+
+0. `resistance_trend` — cycles real observed resistance data (drives time-varying inference target)
+1. `prescribing_trend` — cycles real prescribing data (fed into embedded sim)
+2. `observed_resistance` — `DataGenerationIteration` with time-varying mean from resistance_trend
+3. `observed_rolling_mean` — exponential kernel rolling mean of observed data
+4. `observed_rolling_cov` — exponential kernel rolling covariance
+5. `params_posterior_log_norm` — log-normalisation tracking (loglike at index **6**)
+6. `params_posterior_mean` — posterior mean of 4 learned params
+7. `params_posterior_cov` — posterior covariance (4×4 = 16 values)
+8. `params_generating_process` — posterior sampler
+9. `amr_embedded_simulation` — runs inner sim (6 inner partitions, 40 steps)
+
+**Embedded sim inner partitions:**
+0. `observed_rolling_mean_copy` (FromHistoryIteration)
+1. `observed_rolling_cov_copy` (FromHistoryIteration)
+2. `prescribing_copy` (FromHistoryIteration — replays prescribing into colonisation)
+3. `colonisation_sim` (ColonisationDynamicsIteration — reads prescribing from partition 2)
+4. `resistance_extractor` (CopyValuesIteration — copies index 1 from partition **3**)
+5. `data_comparison` (DataComparisonIteration)
+
+### Learned Parameters (current posterior means)
+
+Used in all `cfg/amr_policy_*.yaml` configs:
+- `transmission_rate: [0.0384]`
+- `selection_coefficient: [0.1351]`
+- `fitness_cost: [0.0170]`
+- `community_resistant_prevalence: [0.1164]`
 
 ## Notebooks
 
@@ -93,12 +166,13 @@ Interactive Go notebooks in `nbs/` use the [GoNB](https://github.com/janpfeifer/
 |----------|---------|
 | `nbs/data_exploration.ipynb` | Fingertips data visualisation: England time series, ICB scatter, trust bacteraemia rates |
 | `nbs/model_validation.ipynb` | Simulation output plots (colonisation, infection) and inference diagnostics (posterior convergence, parameter samples, log-normalisation) |
-| `nbs/policy_comparison.ipynb` | Decision science: prescribing rate, resistance ratio, colonisation dynamics, cumulative resistant BSI across four stewardship policies |
+| `nbs/policy_comparison.ipynb` | Multi-seed policy comparison: prescribing rate, resistance ratio, colonisation dynamics, cumulative resistant BSI (mean ± 2σ across 10 seeds) |
 
 **Conventions:**
 - Each code cell is self-contained: imports above `%%`, executable code below. Variables from `%%` blocks do NOT persist across cells in gonb.
 - Data loading is repeated per cell (e.g. `NewStateTimeStorageFromJsonLogEntries`) rather than shared across cells.
 - The `!*go mod edit -replace` cell at the top of each notebook is for local development — do not remove it.
+- Use `opts.Float(0.5)` not raw `0.5` for go-echarts `types.Float` fields (e.g. `Opacity` in `LineStyle`/`ItemStyle`).
 
 ## Testing Conventions
 
@@ -108,6 +182,10 @@ Interactive Go notebooks in `nbs/` use the [GoNB](https://github.com/janpfeifer/
 - Load settings from a colocated YAML file (e.g., `my_iteration_settings.yaml` next to `my_iteration_test.go`).
 - Use `gonum.org/v1/gonum/floats` for float comparisons, never raw `==`.
 - No mocking — use real implementations.
+
+## Multi-Seed Policy Evaluation
+
+`dat/run_policy_evaluation.py` runs each policy config with 10 different RNG seeds (modifying colonisation and infection seeds via temp YAML files). Output logs are saved as `dat/policy_{name}_seed{i}.log`. The notebook loads all seeds and computes per-timestep mean ± 2σ.
 
 ## Built-In Iterations Reference
 

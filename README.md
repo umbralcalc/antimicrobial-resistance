@@ -1,361 +1,259 @@
-# AMR Stewardship Simulation: Project Plan
+# Antimicrobial Resistance Stewardship Simulation
+
+A stochastic simulation of antimicrobial resistance (AMR) dynamics in English hospitals, fitted to UKHSA surveillance data via simulation-based inference, with a decision science layer that evaluates prescribing policies to reduce resistant bloodstream infections.
+
+Built with the [stochadex](https://github.com/umbralcalc/stochadex) simulation engine.
 
 ---
 
-## Overview
+## The Problem
 
-Build a stochastic simulation of antimicrobial resistance (AMR) dynamics within NHS hospital trusts, learned from freely available UK surveillance and prescribing data, with a decision science layer to evaluate and optimise antibiotic stewardship policies.
+Antibiotic-resistant infections are rising. In England, resistant infection rates increased 22.7% between FY 2019/20 and FY 2024/25. An estimated 35,000+ people die annually in the EU/EEA from antimicrobial-resistant infections. The EU has set 2030 targets for MRSA, cephalosporin-resistant *E. coli*, and carbapenem-resistant *K. pneumoniae* — but current trajectories suggest several targets will be missed without stronger intervention.
 
-The core question: **given the current resistance profile at a trust, what prescribing guideline minimises the expected resistant infection rate over 1–5 years?**
+The question this project answers: **what prescribing policy minimises resistant infections over the medium term, given what we can learn from surveillance data?**
 
----
+### Why stochastic simulation
 
-## Why This Problem
+A systematic review of 38 AMR mathematical models (Arepeva et al., 2018) found that only 4 were fully stochastic and only 2 validated against real data. Existing approaches fall into three camps:
 
-- In England, antibiotic-resistant infections increased 22.7% between FY 2019/20 and FY 2024/25.
-- The EU has set 2030 targets to reduce MRSA, cephalosporin-resistant *E. coli*, and carbapenem-resistant *K. pneumoniae* — but carbapenem-resistant *K. pneumoniae* incidence has been rising, and without stronger action the EU is unlikely to meet all targets.
-- An estimated 35,000+ people die annually in the EU/EEA as a direct consequence of antimicrobial-resistant infections.
-- A systematic review of AMR mathematical models found that only 4 out of 38 reviewed models were fully stochastic, and only 2 attempted to validate against real data. The gap for data-driven stochastic simulation with a decision science layer is wide open.
+| Approach | Limitation |
+|----------|------------|
+| Deterministic compartmental models | No stochastic dynamics, limited policy evaluation |
+| RL on synthetic environments (e.g. `abx_amr_simulator`) | Not fitted to real surveillance data |
+| ML prediction from genomic data | Predicts resistance phenotype, doesn't simulate policy outcomes |
 
----
-
-## The Gap This Fills
-
-Existing work falls into three camps, none of which do what the stochadex enables:
-
-| Approach | Example | Limitation |
-|----------|---------|------------|
-| Deterministic compartmental models | Ross-Macdonald adaptations for hospital transmission | No stochastic dynamics, limited policy evaluation |
-| RL on synthetic environments | `abx_amr_simulator` (March 2026) — Gymnasium-compatible with "leaky-balloon" resistance abstraction | Configurable but not fitted to real surveillance data |
-| ML prediction from genomic data | AMR-MoEGA, various random forest classifiers | Predicts resistance phenotype, doesn't simulate policy outcomes |
-
-**The stochadex differentiator:** a generalised stochastic simulation engine that learns its parameters from real UK surveillance data via simulation-based inference, then evaluates candidate prescribing policies through the decision science layer — exactly the pattern proven in the rugby substitution, fishing sustainability, COVID, and helminth projects.
+This project uses a generalised stochastic simulation engine that learns parameters from real UK data via simulation-based inference, then evaluates candidate prescribing policies — bridging the gap between data-driven fitting and forward-looking policy comparison.
 
 ---
 
-## Phase 1: Data Ingestion
+## Data
 
-### 1.1 Antibiotic prescribing data
+All data is freely available from UKHSA Fingertips (`dat/fetch_fingertips.sh`). The project uses 40 quarters (2015 Q4 – 2025 Q3) of England-level data:
 
-**Source:** OpenPrescribing.net (Bennett Institute for Applied Data Science, University of Oxford)
+| Dataset | Source | Frequency |
+|---------|--------|-----------|
+| E. coli 3rd-gen cephalosporin resistance % | Fingertips AMR indicators | Quarterly |
+| Broad-spectrum prescribing % (cephalosporin/quinolone/co-amoxiclav) | Fingertips AMR indicators | Quarterly |
+| E. coli bacteraemia counts and rates | Fingertips (130 acute trusts) | Annual / rolling monthly |
+| MRSA, MSSA, *C. difficile* rates | Fingertips (130 acute trusts) | Annual |
 
-- RESTful API, no registration required, CSV or JSON output
-- GP-level prescribing data covering the last 5 years
-- Breakdowns by practice, Sub-ICB Location, chemical, or BNF section
-- BNF section 5.1 (Antibacterial drugs) is the primary target
-- Hospital prescribing data also available
+### Key observations from the data
 
-**API example:**
-```
-GET /api/1.0/spending_by_org/?org_type=practice&code=0501&date=2024-01-01
-```
+- **Resistance is trending up.** E. coli 3GC resistance rose from 11% to 17% over 40 quarters (2015–2025).
+- **Prescribing fell then rebounded.** Broad-spectrum prescribing dropped from ~11% to ~7% by 2020, then partially recovered to ~9%.
+- **Cross-sectional signal is weak.** ICB-level correlation between prescribing and resistance is r=0.08 (n=106) — resistance is driven by multiple factors beyond local prescribing.
+- **Trust-level heterogeneity is substantial.** E. coli BSI rates range from 20–160 per 100k across trusts, supporting the case for trust-specific or archetype-based modelling.
 
-**Key variables to extract:**
-- Total items and DDDs (defined daily doses) per antibiotic class per trust/practice per month
-- Broad-spectrum vs narrow-spectrum ratio
-- AWaRe (Access/Watch/Reserve) category breakdown
-
-### 1.2 Resistance surveillance data
-
-**Source:** UKHSA Fingertips AMR Local Indicators
-
-- 80+ indicators at CCG, Acute Trust, and GP practice level
-- Resistance percentages for key pathogen–antibiotic combinations
-- E. coli bacteraemia incidence and resistance profiles
-- MRSA, MSSA, *C. difficile* infection rates
-
-**Source:** ECDC Surveillance Atlas / EARS-Net
-
-- EU/EEA-wide data for 8 bacterial species from invasive isolates (blood and CSF)
-- Downloadable tables, time series, and country-level breakdowns
-- Useful for cross-country validation and broader context
-
-### 1.3 National surveillance context
-
-**Source:** ESPAUR (English Surveillance Programme for Antimicrobial Utilisation and Resistance)
-
-- Annual reports with detailed annexes and downloadable data tables
-- Resistance data from the SGSS AMR module (January 2019 onwards)
-- Pathogen–antibiotic combinations used in national burden analysis
-- Progress tracking against UK National Action Plan targets
-
-### 1.4 Initial data scope
-
-Start narrow to prove the concept:
-
-- **Pathogen:** *E. coli* (most commonly reported species, ~39% of EARS-Net isolates)
-- **Resistance phenotype:** Third-generation cephalosporin resistance (one of the EU 2030 target combinations)
-- **Geography:** 5–10 NHS Acute Trusts with good data coverage
-- **Time window:** 2019–2025 (post-EUCAST standardisation in EARS-Net)
+Regenerate the exploratory plots with `python3 dat/explore.py`.
 
 ---
 
-## Phase 2: Model Structure
+## Model
 
-### 2.1 State variables
-
-The stochadex simulation should track, at minimum:
-
-1. **Patient population** — stochastic admission/discharge dynamics at ward or trust level, with patient-level colonisation status
-2. **Colonisation process** — patients carrying susceptible or resistant *E. coli* strains, with stochastic acquisition from community baseline and within-hospital transmission
-3. **Infection process** — stochastic transition from colonisation to bloodstream infection (BSI), the clinically observable outcome
-4. **Prescribing process** — antibiotic selection rates by class (cephalosporins, penicillins, fluoroquinolones, carbapenems, etc.), representing the policy lever
-5. **Resistance selection** — prescribing pressure shifting the resistant/susceptible strain ratio over time, with fitness cost dynamics allowing partial reversion when pressure is removed
-
-### 2.2 Simulation diagram
-
-The simulation structure follows the stochadex pattern — analogous to the rugby match simulation but with epidemiological state transitions:
+A two-strain (susceptible/resistant *E. coli*) stochastic simulation with three partitions:
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    ENVIRONMENT                      │
-│  Community resistance prevalence (exogenous input)  │
-└──────────────┬──────────────────────────────────────┘
-               │ admission with colonisation status
-               ▼
-┌─────────────────────────────────────────────────────┐
-│               PATIENT POPULATION                    │
-│  Stochastic admission/discharge/length-of-stay      │
-│  State: [susceptible-colonised, resistant-colonised,│
-│          uncolonised]                               │
-└──────┬──────────────────┬───────────────────────────┘
-       │                  │
-       ▼                  ▼
-┌──────────────┐  ┌──────────────────────────────────┐
-│  INFECTION   │  │  WITHIN-HOSPITAL TRANSMISSION    │
-│  PROCESS     │  │  Contact rate × colonisation     │
-│  Col → BSI   │  │  pressure × hygiene effectiveness│
-└──────┬───────┘  └──────────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────────────────────────────┐
-│            PRESCRIBING PROCESS                      │
-│  Antibiotic class selection rates (POLICY LEVER)    │
-│  Empiric → targeted transition on culture results   │
-└──────────────┬──────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│  PRESCRIBING PROCESS (policy lever)              │
+│  State: [cephalosporin_rate]                     │
+└──────────────┬───────────────────────────────────┘
                │ selective pressure
                ▼
-┌─────────────────────────────────────────────────────┐
-│          RESISTANCE SELECTION DYNAMICS              │
-│  Prescribing pressure shifts R/S ratio              │
-│  Fitness cost allows partial reversion              │
-│  Horizontal gene transfer component                 │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│  COLONISATION DYNAMICS (Euler-Maruyama SDE)      │
+│  State: [susceptible_fraction, resistant_fraction]│
+│                                                  │
+│  dS = turnover·(S_community - S)                 │
+│     + transmission·S·U                           │
+│     - selection·ceph_rate·S                      │
+│     + fitness_cost·R                             │
+│                                                  │
+│  dR = turnover·(R_community - R)                 │
+│     + transmission·R·U                           │
+│     + selection·ceph_rate·S                      │
+│     - fitness_cost·R                             │
+│                                                  │
+│  + state-dependent diffusion noise               │
+└──────────────┬───────────────────────────────────┘
+               │ colonisation fractions
+               ▼
+┌──────────────────────────────────────────────────┐
+│  INFECTION PROCESS (Poisson draws)               │
+│  State: [susceptible_bsi_count, resistant_bsi_count]│
+│  λ = infection_prob × colonised_patients × dt    │
+└──────────────────────────────────────────────────┘
 ```
 
-### 2.3 Key modelling choices
+The colonisation SDE captures: patient turnover towards community baseline, within-hospital transmission, selection pressure from cephalosporin prescribing shifting the R/S ratio, and a fitness cost allowing resistant strains to revert when pressure is removed. The infection process converts colonisation fractions into clinically observable BSI events via Poisson sampling.
 
-- **Two-strain model** initially: susceptible (S) and resistant (R) *E. coli*. Extend to multi-strain / multi-pathogen later.
-- **Ward-level granularity** where data permits, trust-level otherwise.
-- **Stochastic event rates** learned from data, not assumed from literature. This is the critical methodological contribution.
-- **Time resolution:** monthly (matching the prescribing data cadence), with the option to run at finer resolution for within-hospital dynamics.
+**Source:** `pkg/amr/colonisation.go`, `pkg/amr/infection.go`
 
-### 2.4 Current implementation
+---
 
-The minimal simulation is implemented in `pkg/amr/` with three partitions:
+## Inference
 
-| Partition | Iteration | State | Source |
-|-----------|-----------|-------|--------|
-| 0: prescribing | `ParamValuesIteration` (built-in) | `[cephalosporin_rate]` | Policy lever |
-| 1: colonisation | `ColonisationDynamicsIteration` | `[susceptible_fraction, resistant_fraction]` | `pkg/amr/colonisation.go` |
-| 2: infection | `InfectionProcessIteration` | `[susceptible_bsi_count, resistant_bsi_count]` | `pkg/amr/infection.go` |
+Four parameters are learned from the England-level resistance time series via simulation-based inference (`cfg/amr_inference.yaml`):
 
-**Colonisation dynamics** — Euler-Maruyama SDE with patient turnover towards community baseline, within-hospital transmission, cephalosporin selection pressure shifting the R/S ratio, fitness cost allowing resistant strain reversion, and state-dependent stochastic noise.
+| Parameter | Learned value | Meaning |
+|-----------|--------------|---------|
+| `transmission_rate` | 0.038 | Within-hospital colonisation acquisition rate |
+| `selection_coefficient` | 0.135 | Strength of cephalosporin prescribing in shifting R/S ratio |
+| `fitness_cost` | 0.017 | Resistant strain reversion rate without selective pressure |
+| `community_resistant_prevalence` | 0.116 | Baseline resistant colonisation fraction at admission |
 
-**Infection process** — Converts colonisation fractions into BSI event counts via Poisson draws (rate = infection probability × colonised patients × dt).
+The inference pipeline feeds the real time-varying prescribing and resistance data into the fitting process:
 
-Run the simulation:
+- A `resistance_trend` partition cycles through the 40 quarterly observed resistance values, driving the `DataGenerationIteration` mean so the inference target tracks the actual 0.11 → 0.17 trend.
+- A `prescribing_trend` partition cycles through the 40 quarterly prescribing values, replayed inside the embedded simulation via `FromHistoryIteration` so the colonisation model sees time-varying prescribing pressure during fitting.
+- Data is cycled over 1000 inference steps to ensure posterior convergence.
+- The `NewDataReplayIteration` helper (`pkg/amr/data_replay.go`) loads JSON data files and creates cycling `FromStorageIteration` instances for use in YAML configs.
+
+The posterior converges within ~50 steps. Run `python3 dat/plot_inference.py` for convergence diagnostics.
+
+---
+
+## Policy Evaluation
+
+Four prescribing policies are implemented as drop-in replacements for the prescribing partition:
+
+| Policy | Description | Source |
+|--------|-------------|--------|
+| **Baseline** | Constant cephalosporin rate (0.3) | `ParamValuesIteration` (built-in) |
+| **Cycling** | Quarterly alternation: high (0.3) ↔ low (0.05) every 13 steps | `pkg/amr/cycling.go` |
+| **Threshold** | Default rate (0.3) drops to escalation rate (0.05) when resistance exceeds 15% | `pkg/amr/threshold.go` |
+| **Restriction** | Linear ramp-down from 0.3 to 0.1 over 26 steps, then hold | `pkg/amr/restriction.go` |
+
+Each policy is evaluated over 200 time steps with **10 stochastic trajectories** (different RNG seeds) to quantify uncertainty. All simulations use the learned posterior mean parameters.
+
+### Results
+
+Cumulative resistant BSI over 200 time steps (mean ± 2σ across 10 seeds):
+
+| Policy | Cumulative resistant BSI | vs Baseline | Final resistance ratio |
+|--------|------------------------:|------------:|----------------------:|
+| Baseline | 186.8 ± 28.0 | — | 0.546 ± 0.031 |
+| Cycling | 165.8 ± 35.5 | −11.2% | 0.481 ± 0.034 |
+| Threshold | 152.7 ± 23.1 | **−18.3%** | 0.447 ± 0.032 |
+| Restriction | 152.5 ± 24.4 | **−18.4%** | 0.430 ± 0.035 |
+
+### Findings
+
+1. **All three active policies reduce resistant infections compared to the constant baseline.** The reductions are statistically meaningful — the uncertainty bands separate clearly by ~100 time steps.
+
+2. **Threshold escalation and restriction perform similarly (~18% reduction), both outperforming cycling (~11%).** This suggests that sustained reduction in cephalosporin pressure is more effective than periodic oscillation. The fitness cost of resistance (0.017) is small enough that brief low-pressure windows during cycling don't allow sufficient reversion.
+
+3. **Threshold escalation is adaptive and restriction is not, but they converge.** The threshold policy reacts to rising resistance, while the restriction policy ramps down on a fixed schedule. Both achieve similar outcomes because the resistance trajectory under the learned parameters reliably crosses the 15% threshold.
+
+4. **Community importation dominates the resistance floor.** The learned `community_resistant_prevalence` of 0.116 means that ~12% of patients arrive already colonised with resistant strains. No prescribing policy can push resistance below this floor — stewardship limits the amplification, not the baseline.
+
+5. **Uncertainty grows over time but doesn't change the ranking.** The ±2σ bands widen over 200 steps, but the policy ordering (restriction ≈ threshold < cycling < baseline) is consistent across seeds.
+
+---
+
+## Interactive Notebooks
+
+Go notebooks in `nbs/` use the [GoNB](https://github.com/janpfeifer/gonb) Jupyter kernel with [go-echarts](https://github.com/go-echarts/go-echarts) via [gonb-echarts](https://github.com/janpfeifer/gonb-echarts):
+
+| Notebook | Contents |
+|----------|----------|
+| `nbs/data_exploration.ipynb` | England time series, ICB scatter, trust bacteraemia rates |
+| `nbs/model_validation.ipynb` | Simulation dynamics, posterior convergence, parameter samples, log-normalisation |
+| `nbs/policy_comparison.ipynb` | Prescribing rate, resistance ratio, colonisation dynamics, cumulative resistant BSI (mean ± 2σ, 10 seeds) |
+
+---
+
+## Running the Project
+
 ```bash
+# Build and test
+go build ./...
+go test -count=1 ./...
+
+# Data acquisition
+./dat/fetch_fingertips.sh
+python3 dat/prepare_baseline.py
+python3 dat/prepare_sbi_data.py
+
+# Exploratory analysis
+python3 dat/explore.py
+
+# Simulation
 go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_simulation.yaml
+
+# Inference (learns 4 parameters from surveillance data)
+go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_inference.yaml
+python3 dat/plot_inference.py
+python3 dat/plot_validation.py
+
+# Policy evaluation (4 policies × 10 seeds = 40 simulations)
+python3 dat/run_policy_evaluation.py
+python3 dat/plot_policy_comparison.py
 ```
 
-### 2.5 Data acquired
-
-Downloaded via `./dat/fetch_fingertips.sh` from the UKHSA Fingertips API (130 acute trusts, quarterly, 2016 Q1–2025 Q4):
-
-| File | Indicator | Level | Frequency |
-|------|-----------|-------|-----------|
-| `ecoli_cephalosporin_susceptibility` | % E. coli blood specimens tested for 3rd gen cephalosporin susceptibility | Acute Trust | Quarterly |
-| `ecoli_bacteraemia_annual` | E. coli BSI case counts and rates | Acute Trust | Annual |
-| `ecoli_bacteraemia_rolling` | E. coli BSI 12-month rolling counts/rates | Acute Trust | Monthly |
-| `ecoli_hospital_onset_annual` | Hospital-onset E. coli BSI counts/rates | Acute Trust | Annual |
-| `cdiff_annual` | *C. difficile* infection counts/rates | Acute Trust | Annual |
-| `mrsa_annual` | MRSA bacteraemia counts/rates | Acute Trust | Annual |
-| `mssa_annual` | MSSA bacteraemia counts/rates | Acute Trust | Annual |
-| `ecoli_cephalosporin_resistance_pct` | Rolling quarterly % E. coli resistant to 3rd gen cephalosporins | ICB sub-location | Quarterly |
-| `broadspectrum_pct` | % prescribed antibiotics from cephalosporin/quinolone/co-amoxiclav | ICB sub-location | Quarterly |
-| `total_antibiotics_starpu` | Total antibiotic items per STAR-PU | ICB sub-location | Quarterly |
-
-EARS-Net cross-country data requires manual download from the ECDC Surveillance Atlas — see `dat/EARS_NET_MANUAL_DOWNLOAD.md`.
-
-### 2.6 Interactive notebooks
-
-Go notebooks in `nbs/` provide interactive visualisation using the [GoNB](https://github.com/janpfeifer/gonb) Jupyter kernel with Apache ECharts via [gonb-echarts](https://github.com/janpfeifer/gonb-echarts):
-
-- **`nbs/data_exploration.ipynb`** — Fingertips data exploration: England-level prescribing and resistance time series, ICB sub-location cross-sectional scatter, trust-level E. coli bacteraemia rates.
-- **`nbs/model_validation.ipynb`** — Simulation and inference diagnostics: colonisation dynamics, infection process, posterior mean/variance convergence, parameter sample scatter plots, log-normalisation tracking.
-- **`nbs/policy_comparison.ipynb`** — Decision science layer: prescribing rate, resistance ratio, colonisation dynamics, and cumulative resistant BSI comparison across four stewardship policies.
-
-### 2.7 Exploratory findings
-
-Run `python3 dat/explore.py` to regenerate the plots below.
-
-**England time series** (`plot_england_timeseries.png`): Broad-spectrum prescribing fell from ~11% to ~7% between 2014 and 2020, then partially rebounded. E. coli 3GC resistance has been trending upward, rising from ~11% to ~17% over the same period — the two series move in loosely opposing directions at the national level.
-
-**ICB cross-sectional scatter** (`plot_icb_scatter.png`): Weak positive correlation (r=0.08, n=106) between ICB-level broad-spectrum prescribing % and resistance % in 2025 Q3. The relationship is noisy, consistent with resistance being driven by multiple factors beyond local prescribing pressure (community importation, hospital transmission, patient mix).
-
-**Trust bacteraemia rates** (`plot_trust_bacteraemia.png`): E. coli BSI rates vary substantially across trusts (20–160 per 100k) with a COVID-era dip in 2020–2021 followed by recovery. The heterogeneity supports the modelling approach of fitting per-trust or per-archetype parameters.
-
 ---
 
-## Phase 3: Learning from Data
+## Project Structure
 
-### 3.1 Simulation-based inference
-
-Apply the same approach used across all previous stochadex projects:
-
-1. **Smooth and aggregate** the OpenPrescribing and Fingertips data to produce baseline event rates — "what the averaged trust does" in terms of prescribing patterns and resistance trajectories.
-2. **Fit deviation coefficients** using simulation-based inference (SBI), matching simulated resistance trajectories to the observed EARS-Net/Fingertips trends conditional on the observed prescribing inputs.
-3. **Key parameters to learn:**
-   - Within-hospital transmission rate (colonisation acquisition rate per patient-day)
-   - Selection coefficient: how much a unit increase in cephalosporin prescribing shifts the R/S ratio
-   - Fitness cost of resistance: reversion rate when selective pressure is removed
-   - Community importation rate: baseline resistant colonisation at admission
-
-### 3.2 Current inference results
-
-The SBI pipeline (`cfg/amr_inference.yaml`) learns 4 parameters from the England-level resistance time series using time-varying prescribing and resistance targets (cycling through the 40 quarterly observations). Posterior means converge within ~50 steps:
-
-| Parameter | Posterior mean | Interpretation |
-|-----------|---------------|----------------|
-| `transmission_rate` | 0.0384 | Within-hospital colonisation acquisition rate |
-| `selection_coefficient` | 0.1351 | Cephalosporin prescribing shifts R/S ratio |
-| `fitness_cost` | 0.0170 | Resistant strain reversion rate without pressure |
-| `community_resistant_prevalence` | 0.1164 | Baseline resistant colonisation at admission |
-
-Run `python3 dat/plot_inference.py` for convergence plots, `python3 dat/plot_validation.py` for simulated vs observed comparison.
-
-The inference uses time-varying inputs: the observed resistance mean drives `DataGenerationIteration` to track the real 0.11 → 0.17 trend, and the observed prescribing time series is replayed inside the embedded simulation via `FromHistoryIteration`. Data is cycled over 1000 inference steps to ensure posterior convergence.
-
-### 3.3 Validation strategy
-
-- **Held-out trusts:** Train on a subset of trusts, validate predictions on others.
-- **Temporal holdout:** Train on 2019–2023, predict 2024–2025 resistance trends.
-- **Cross-country validation:** Check whether parameters learned from UK data produce plausible trajectories when applied to EARS-Net data from comparable European countries (e.g., Netherlands, Denmark).
-
----
-
-## Phase 4: Decision Science Layer
-
-### 4.1 Policy actions to evaluate
-
-The decision science layer evaluates candidate prescribing policies — the analogue of rugby substitution timing:
-
-| Policy type | Description |
-|-------------|-------------|
-| **Antibiotic cycling** | Rotate first-line antibiotic class on a fixed schedule (e.g., quarterly) |
-| **Mixing** | Assign different first-line antibiotics to different patients simultaneously |
-| **Threshold escalation** | Switch first-line class when local resistance exceeds a threshold (e.g., 10%) |
-| **Heterogeneous guidelines** | Different policies for different ward types (ICU vs general medical) |
-| **Restriction policies** | Cap broad-spectrum use at a fixed proportion of total prescribing |
-
-### 4.2 Objective function
-
-Simulate multiple trajectories under each policy and evaluate:
-
-- **Primary outcome:** Expected resistant BSI incidence rate at 1, 3, and 5 years
-- **Constraint:** Treatment adequacy — empiric therapy must achieve ≥ X% appropriate coverage
-- **Secondary outcomes:** Total antibiotic consumption (DDDs), AWaRe category mix, time until resistance threshold is breached
-
-### 4.3 Current implementation
-
-Four prescribing policies are implemented, each a drop-in replacement for partition 0 (outputting `[cephalosporin_rate]`):
-
-| Policy | Iteration | Key Params | Source |
-|--------|-----------|------------|--------|
-| Baseline (constant) | `ParamValuesIteration` (built-in) | `param_values: [0.3]` | — |
-| Antibiotic cycling | `CyclingPrescribingIteration` | `high_rate`, `low_rate`, `cycle_period` | `pkg/amr/cycling.go` |
-| Threshold escalation | `ThresholdPrescribingIteration` | `default_rate`, `escalation_rate`, `resistance_threshold` | `pkg/amr/threshold.go` |
-| Restriction | `RestrictionPrescribingIteration` | `initial_rate`, `target_rate`, `ramp_period` | `pkg/amr/restriction.go` |
-
-Run each policy with learned parameters:
-```bash
-go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_policy_baseline.yaml
-go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_policy_cycling.yaml
-go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_policy_threshold.yaml
-go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_policy_restriction.yaml
-python3 dat/plot_policy_comparison.py  # comparison plot
+```
+cfg/
+  amr_simulation.yaml          # forward simulation config
+  amr_inference.yaml            # simulation-based inference config
+  amr_policy_*.yaml             # one config per policy (4 total)
+pkg/amr/
+  colonisation.go               # two-strain SDE colonisation dynamics
+  infection.go                  # Poisson BSI process
+  cycling.go                    # cycling prescribing policy
+  threshold.go                  # threshold escalation policy
+  restriction.go                # restriction ramp-down policy
+  data_replay.go                # JSON data loading for FromStorageIteration
+  *_test.go                     # unit tests with harness checks
+  *_settings.yaml               # test settings files
+dat/
+  fetch_fingertips.sh           # download UKHSA surveillance data
+  prepare_baseline.py           # aggregate England-level time series
+  prepare_sbi_data.py           # format data for inference
+  run_policy_evaluation.py      # multi-seed policy evaluation runner
+  explore.py                    # exploratory analysis plots
+  plot_inference.py             # posterior convergence diagnostics
+  plot_validation.py            # simulated vs observed comparison
+  plot_policy_comparison.py     # policy comparison plots
+  fingertips_*.csv              # raw Fingertips data
+  baseline_england.csv          # processed England time series
+  sbi_*.json                    # formatted inference input data
+  policy_*_seed*.log            # simulation output logs (40 total)
+nbs/
+  data_exploration.ipynb        # data visualisation (GoNB)
+  model_validation.ipynb        # inference diagnostics (GoNB)
+  policy_comparison.ipynb       # policy comparison (GoNB)
 ```
 
-### 4.4 Output
+---
 
-For each trust or trust archetype, produce a policy recommendation analogous to the rugby finding ("front row forwards are best substituted at ~60 minutes"):
+## Extensions
 
-> *"For trusts with baseline cephalosporin-resistant E. coli prevalence between 10–15%, switching to a mixing strategy with 40% amoxicillin / 30% nitrofurantoin / 30% trimethoprim as empiric first-line reduces the expected resistant BSI rate by X% over 3 years compared to current guidelines."*
+1. **Multi-pathogen:** Add *K. pneumoniae* (carbapenem resistance) and *S. aureus* (MRSA) — the data is already downloaded.
+2. **Trust-level fitting:** Fit per-trust or per-archetype parameters instead of England-level averages, using the ICB sub-location data already prepared.
+3. **Network effects:** Model patient transfers between trusts as a transmission pathway using Hospital Episode Statistics.
+4. **Economic layer:** Add treatment costs, bed-days, and mortality to produce cost-effectiveness estimates for stewardship interventions.
+5. **One Health:** Incorporate agricultural antibiotic use data (EFSA) to model community resistance importation dynamics.
 
 ---
 
-## Phase 5: Extensions
+## Data Sources
 
-Once the core two-strain *E. coli* model is validated:
-
-1. **Multi-pathogen:** Add *K. pneumoniae* (carbapenem resistance — the most concerning EU trend) and *S. aureus* (MRSA)
-2. **One Health dimension:** Incorporate agricultural antibiotic use data (EFSA publishes animal-sector AMR data) to model community resistance importation
-3. **Network effects:** Model patient transfers between trusts as a transmission pathway, using Hospital Episode Statistics (HES) data
-4. **Economic layer:** Add cost data (treatment costs, bed-days, mortality) to produce cost-effectiveness estimates for stewardship interventions
-5. **Real-time dashboard:** Connect to live Fingertips/OpenPrescribing data feeds for ongoing trust-level policy recommendations
-
----
-
-## Concrete First Steps
-
-### Week 1–2: Data acquisition and exploration
-
-- [x] Pull prescribing data from Fingertips API (`dat/fetch_fingertips.sh` — broad-spectrum %, total antibiotics per STAR-PU)
-- [x] Download matching Fingertips AMR indicators for 130 acute trusts (`dat/fingertips_*.csv`)
-- [x] Document EARS-Net manual download steps (`dat/EARS_NET_MANUAL_DOWNLOAD.md`)
-- [x] Exploratory analysis (`dat/explore.py` — 3 plots: England time series, ICB scatter, trust bacteraemia rates)
-
-### Week 3–4: Minimal stochadex simulation
-
-- [x] Implement a two-strain (susceptible/resistant *E. coli*) simulation in the stochadex (`pkg/amr/colonisation.go`)
-- [x] Define the state transition structure (admission → colonisation → infection → discharge) (`pkg/amr/infection.go`)
-- [x] Implement prescribing-driven selection pressure as an input process (`cfg/amr_simulation.yaml`)
-- [x] Verify the simulation produces qualitatively sensible dynamics (`dat/plot_simulation.py`)
-
-### Week 5–6: Simulation-based inference
-
-- [x] Smooth and aggregate prescribing/resistance data into baseline event rates (`dat/prepare_baseline.py`)
-- [x] Set up SBI to learn transmission and selection parameters (`cfg/amr_inference.yaml`)
-- [x] Validate: simulated trajectories reproduce observed England resistance trend (`dat/plot_validation.py`)
-- [x] Build interactive Go notebooks for data exploration and model validation (`nbs/data_exploration.ipynb`, `nbs/model_validation.ipynb`)
-
-### Week 7–8: Decision science layer
-
-- [x] Implement 3–4 candidate prescribing policies as action sets
-- [ ] Run policy evaluation: simulate multiple trajectories under each policy
-- [ ] Produce initial findings and visualisations
-- [ ] Write up as a blog post in the "Engineering Smart Actions in Practice" series
+| Source | Data type | Access |
+|--------|-----------|--------|
+| UKHSA Fingertips AMR Local Indicators | AMR indicators by trust/CCG/practice | Free, downloadable |
+| OpenPrescribing.net | GP & hospital prescribing by trust/practice | Free REST API |
+| ECDC Surveillance Atlas (EARS-Net) | Resistance data, 8 species, EU/EEA | Free, downloadable |
+| ESPAUR Reports | Annual UK AMR and prescribing reports | Free PDF + data tables |
 
 ---
 
-## Key Data Sources Summary
+## References
 
-| Source | URL | Data type | Access |
-|--------|-----|-----------|--------|
-| OpenPrescribing | openprescribing.net/api/ | GP & hospital prescribing by trust/practice | Free REST API, no registration |
-| UKHSA Fingertips | fingertips.phe.org.uk/profile/amr-local-indicators | AMR indicators by trust/CCG/practice | Free, downloadable |
-| ECDC Surveillance Atlas | atlas.ecdc.europa.eu | EARS-Net resistance data, 8 species, EU/EEA | Free, downloadable |
-| WHO GLASS Dashboard | who.int/initiatives/glass | Global AMR and antimicrobial consumption | Free, downloadable |
-| ESPAUR Reports | gov.uk (search ESPAUR) | Annual UK AMR and prescribing reports with data tables | Free PDF + data tables |
-| ResistanceMap | resistancemap.onehealthtrust.org | Global resistance trends, multiple data sources | Free, interactive |
-
----
-
-## References and Related Work
-
+- Arepeva et al. (2018) — Systematic review of 38 AMR mathematical models. *Antimicrobial Resistance & Infection Control*
+- Pezzani et al. (2024) — Ross-Macdonald model adapted for CRKP hospital transmission. *Scientific Reports*
+- Rawson et al. (2020) — System dynamics modelling for antibiotic prescribing policy in hospitals. *J. Operational Research Society*
 - `abx_amr_simulator` — Gymnasium-compatible AMR simulation for RL policy testing (bioRxiv, March 2026)
-- Pezzani et al. (2024) — Ross-Macdonald model adapted for CRKP hospital transmission (*Scientific Reports*)
-- Arepeva et al. (2018) — Systematic review of 38 AMR mathematical models (*Antimicrobial Resistance & Infection Control*)
-- Rawson et al. (2020) — System dynamics modelling for antibiotic prescribing policy in hospitals (*J. Operational Research Society*)
 - ESPAUR 2024–25 Report — Latest English AMR surveillance data and national action plan progress
