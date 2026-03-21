@@ -59,29 +59,29 @@ A two-strain (susceptible/resistant *E. coli*) stochastic simulation with three 
 └──────────────┬───────────────────────────────────┘
                │ selective pressure
                ▼
-┌──────────────────────────────────────────────────┐
-│  COLONISATION DYNAMICS (Euler-Maruyama SDE)      │
+┌───────────────────────────────────────────────────┐
+│  COLONISATION DYNAMICS (Euler-Maruyama SDE)       │
 │  State: [susceptible_fraction, resistant_fraction]│
-│                                                  │
-│  dS = turnover·(S_community - S)                 │
-│     + transmission·S·U                           │
-│     - selection·ceph_rate·S                      │
-│     + fitness_cost·R                             │
-│                                                  │
-│  dR = turnover·(R_community - R)                 │
-│     + transmission·R·U                           │
-│     + selection·ceph_rate·S                      │
-│     - fitness_cost·R                             │
-│                                                  │
-│  + state-dependent diffusion noise               │
-└──────────────┬───────────────────────────────────┘
+│                                                   │
+│  dS = turnover·(S_community - S)                  │
+│     + transmission·S·U                            │
+│     - selection·ceph_rate·S                       │
+│     + fitness_cost·R                              │
+│                                                   │
+│  dR = turnover·(R_community - R)                  │
+│     + transmission·R·U                            │
+│     + selection·ceph_rate·S                       │
+│     - fitness_cost·R                              │
+│                                                   │
+│  + state-dependent diffusion noise                │
+└──────────────┬────────────────────────────────────┘
                │ colonisation fractions
                ▼
-┌──────────────────────────────────────────────────┐
-│  INFECTION PROCESS (Poisson draws)               │
+┌─────────────────────────────────────────────────────┐
+│  INFECTION PROCESS (Poisson draws)                  │
 │  State: [susceptible_bsi_count, resistant_bsi_count]│
-│  λ = infection_prob × colonised_patients × dt    │
-└──────────────────────────────────────────────────┘
+│  λ = infection_prob × colonised_patients × dt       │
+└─────────────────────────────────────────────────────┘
 ```
 
 The colonisation SDE captures: patient turnover towards community baseline, within-hospital transmission, selection pressure from cephalosporin prescribing shifting the R/S ratio, and a fitness cost allowing resistant strains to revert when pressure is removed. The infection process converts colonisation fractions into clinically observable BSI events via Poisson sampling.
