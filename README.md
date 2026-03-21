@@ -150,6 +150,25 @@ The simulation structure follows the stochadex pattern — analogous to the rugb
 - **Stochastic event rates** learned from data, not assumed from literature. This is the critical methodological contribution.
 - **Time resolution:** monthly (matching the prescribing data cadence), with the option to run at finer resolution for within-hospital dynamics.
 
+### 2.4 Current implementation
+
+The minimal simulation is implemented in `pkg/amr/` with three partitions:
+
+| Partition | Iteration | State | Source |
+|-----------|-----------|-------|--------|
+| 0: prescribing | `ParamValuesIteration` (built-in) | `[cephalosporin_rate]` | Policy lever |
+| 1: colonisation | `ColonisationDynamicsIteration` | `[susceptible_fraction, resistant_fraction]` | `pkg/amr/colonisation.go` |
+| 2: infection | `InfectionProcessIteration` | `[susceptible_bsi_count, resistant_bsi_count]` | `pkg/amr/infection.go` |
+
+**Colonisation dynamics** — Euler-Maruyama SDE with patient turnover towards community baseline, within-hospital transmission, cephalosporin selection pressure shifting the R/S ratio, fitness cost allowing resistant strain reversion, and state-dependent stochastic noise.
+
+**Infection process** — Converts colonisation fractions into BSI event counts via Poisson draws (rate = infection probability × colonised patients × dt).
+
+Run the simulation:
+```bash
+go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_simulation.yaml
+```
+
 ---
 
 ## Phase 3: Learning from Data
@@ -227,9 +246,9 @@ Once the core two-strain *E. coli* model is validated:
 
 ### Week 3–4: Minimal stochadex simulation
 
-- [ ] Implement a two-strain (susceptible/resistant *E. coli*) simulation in the stochadex
-- [ ] Define the state transition structure (admission → colonisation → infection → discharge)
-- [ ] Implement prescribing-driven selection pressure as an input process
+- [x] Implement a two-strain (susceptible/resistant *E. coli*) simulation in the stochadex (`pkg/amr/colonisation.go`)
+- [x] Define the state transition structure (admission → colonisation → infection → discharge) (`pkg/amr/infection.go`)
+- [x] Implement prescribing-driven selection pressure as an input process (`cfg/amr_simulation.yaml`)
 - [ ] Verify the simulation produces qualitatively sensible dynamics with hand-tuned parameters
 
 ### Week 5–6: Simulation-based inference

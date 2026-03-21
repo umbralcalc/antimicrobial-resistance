@@ -1,22 +1,23 @@
-package custom
+package amr
 
 import (
 	"testing"
 
-	"github.com/umbralcalc/stochadex/pkg/continuous"
+	"github.com/umbralcalc/stochadex/pkg/general"
 	"github.com/umbralcalc/stochadex/pkg/simulator"
 )
 
-func TestMovingAverage(t *testing.T) {
+func TestInfectionProcess(t *testing.T) {
 	t.Run(
-		"test that the moving average runs",
+		"test that infection process runs",
 		func(t *testing.T) {
 			settings := simulator.LoadSettingsFromYaml(
-				"./moving_average_settings.yaml",
+				"./infection_settings.yaml",
 			)
 			iterations := []simulator.Iteration{
-				&continuous.WienerProcessIteration{},
-				&MovingAverageIteration{},
+				&general.ParamValuesIteration{},
+				&ColonisationDynamicsIteration{},
+				&InfectionProcessIteration{},
 			}
 			for i, iter := range iterations {
 				iter.Configure(i, settings)
@@ -39,14 +40,15 @@ func TestMovingAverage(t *testing.T) {
 		},
 	)
 	t.Run(
-		"test that the moving average runs with harnesses",
+		"test that infection process runs with harnesses",
 		func(t *testing.T) {
 			settings := simulator.LoadSettingsFromYaml(
-				"./moving_average_settings.yaml",
+				"./infection_settings.yaml",
 			)
 			iterations := []simulator.Iteration{
-				&continuous.WienerProcessIteration{},
-				&MovingAverageIteration{},
+				&general.ParamValuesIteration{},
+				&ColonisationDynamicsIteration{},
+				&InfectionProcessIteration{},
 			}
 			store := simulator.NewStateTimeStorage()
 			implementations := &simulator.Implementations{

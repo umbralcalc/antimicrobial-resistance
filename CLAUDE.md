@@ -71,7 +71,7 @@ main:
 ```bash
 go build ./...                                    # compile this project
 go test -count=1 ./...                            # run all tests
-go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/builtin_example.yaml
+go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_simulation.yaml
 ```
 
 ## Testing Conventions

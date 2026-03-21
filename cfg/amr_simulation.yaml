@@ -1,0 +1,60 @@
+main:
+  partitions:
+
+  # Partition 0: Prescribing input — cephalosporin prescribing rate as policy lever
+  # State: [cephalosporin_rate]
+  - name: prescribing
+    iteration: prescribing
+    params:
+      param_values: [0.3]
+    init_state_values: [0.3]
+    state_history_depth: 1
+    seed: 0
+    extra_packages:
+    - github.com/umbralcalc/stochadex/pkg/general
+    extra_vars:
+    - prescribing: "&general.ParamValuesIteration{}"
+
+  # Partition 1: Two-strain colonisation dynamics (susceptible/resistant E. coli)
+  # State: [susceptible_fraction, resistant_fraction]
+  - name: colonisation
+    iteration: colonisation
+    params:
+      community_susceptible_prevalence: [0.15]
+      community_resistant_prevalence: [0.05]
+      turnover_rate: [0.1]
+      transmission_rate: [0.05]
+      selection_coefficient: [0.2]
+      fitness_cost: [0.02]
+      noise_scale: [0.01]
+      prescribing_partition: [0]
+    init_state_values: [0.15, 0.05]
+    state_history_depth: 1
+    seed: 9182
+    extra_packages:
+    - github.com/example/my-stochadex-project/pkg/amr
+    extra_vars:
+    - colonisation: "&amr.ColonisationDynamicsIteration{}"
+
+  # Partition 2: Infection process — colonisation to bloodstream infection
+  # State: [susceptible_bsi_count, resistant_bsi_count]
+  - name: infection
+    iteration: infection
+    params:
+      infection_probability: [0.01]
+      patient_population: [500.0]
+      colonisation_partition: [1]
+    init_state_values: [0.0, 0.0]
+    state_history_depth: 1
+    seed: 3347
+    extra_packages:
+    - github.com/example/my-stochadex-project/pkg/amr
+    extra_vars:
+    - infection: "&amr.InfectionProcessIteration{}"
+
+  simulation:
+    output_condition: "&simulator.EveryStepOutputCondition{}"
+    output_function: "&simulator.StdoutOutputFunction{}"
+    termination_condition: "&simulator.NumberOfStepsTerminationCondition{MaxNumberOfSteps: 60}"
+    timestep_function: "&simulator.ConstantTimestepFunction{Stepsize: 1.0}"
+    init_time_value: 0.0
