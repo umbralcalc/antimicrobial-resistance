@@ -78,6 +78,11 @@ python3 dat/prepare_baseline.py                   # prepare baseline event rates
 python3 dat/explore.py                            # exploratory analysis plots
 python3 dat/plot_inference.py                     # plot inference results
 python3 dat/plot_validation.py                    # plot validation comparison
+go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_policy_baseline.yaml
+go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_policy_cycling.yaml
+go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_policy_threshold.yaml
+go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_policy_restriction.yaml
+python3 dat/plot_policy_comparison.py             # plot policy comparison
 ```
 
 ## Notebooks
@@ -88,6 +93,7 @@ Interactive Go notebooks in `nbs/` use the [GoNB](https://github.com/janpfeifer/
 |----------|---------|
 | `nbs/data_exploration.ipynb` | Fingertips data visualisation: England time series, ICB scatter, trust bacteraemia rates |
 | `nbs/model_validation.ipynb` | Simulation output plots (colonisation, infection) and inference diagnostics (posterior convergence, parameter samples, log-normalisation) |
+| `nbs/policy_comparison.ipynb` | Decision science: prescribing rate, resistance ratio, colonisation dynamics, cumulative resistant BSI across four stewardship policies |
 
 **Conventions:**
 - Each code cell is self-contained: imports above `%%`, executable code below. Variables from `%%` blocks do NOT persist across cells in gonb.

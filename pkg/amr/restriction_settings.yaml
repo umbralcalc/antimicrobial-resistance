@@ -1,0 +1,30 @@
+iterations:
+# Partition 0: Restriction prescribing policy
+- name: prescribing
+  params:
+    initial_rate: [0.3]
+    target_rate: [0.1]
+    ramp_period: [26.0]
+  init_state_values: [0.3]
+  seed: 0
+  state_width: 1
+  state_history_depth: 2
+
+# Partition 1: Colonisation dynamics (two-strain SDE)
+- name: colonisation
+  params:
+    community_susceptible_prevalence: [0.15]
+    community_resistant_prevalence: [0.05]
+    turnover_rate: [0.1]
+    transmission_rate: [0.05]
+    selection_coefficient: [0.2]
+    fitness_cost: [0.02]
+    noise_scale: [0.01]
+    prescribing_partition: [0]
+  init_state_values: [0.15, 0.05]
+  seed: 9182
+  state_width: 2
+  state_history_depth: 2
+
+init_time_value: 0.0
+timesteps_history_depth: 2

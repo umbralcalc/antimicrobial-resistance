@@ -1,8 +1,8 @@
-module github.com/example/my-stochadex-project
+module github.com/umbralcalc/antimicrobial-resistance
 
 go 1.25.2
 
-require github.com/umbralcalc/stochadex v0.0.0-20260317065257-feffe6b6ff38
+require github.com/umbralcalc/stochadex v0.0.0-20260321093810-d1d7a836e820
 
 require (
 	github.com/gorilla/websocket v1.5.3 // indirect

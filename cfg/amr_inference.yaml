@@ -1,14 +1,45 @@
 main:
   partitions:
 
-  # Partition 0: Observed resistance data stream
-  # Generates synthetic observed data from the England E. coli 3GC resistance
-  # time series statistics (mean ~0.13, variance ~0.0004)
+  # Partition 0: Resistance trend data replay
+  # Cycles through 40 quarterly observed resistance values, driving the
+  # DataGenerationIteration's mean to track the real trend (0.11 → 0.17).
+  - name: resistance_trend
+    iteration: resistanceTrend
+    params: {}
+    init_state_values: [0.11]
+    state_history_depth: 2
+    seed: 0
+    extra_packages:
+    - github.com/umbralcalc/antimicrobial-resistance/pkg/amr
+    extra_vars:
+    - resistanceTrend: "amr.NewDataReplayIteration(\"./dat/sbi_observed_resistance.json\", 1001)"
+
+  # Partition 1: Prescribing trend data replay
+  # Cycles through 40 quarterly observed prescribing values, fed into the
+  # embedded simulation so colonisation sees time-varying prescribing pressure.
+  - name: prescribing_trend
+    iteration: prescribingTrend
+    params: {}
+    init_state_values: [0.092]
+    state_history_depth: 500
+    seed: 0
+    extra_packages:
+    - github.com/umbralcalc/antimicrobial-resistance/pkg/amr
+    extra_vars:
+    - prescribingTrend: "amr.NewDataReplayIteration(\"./dat/sbi_prescribing_input.json\", 1001)"
+
+  # Partition 2: Observed resistance data stream
+  # Generates synthetic observed data with TIME-VARYING mean driven by
+  # resistance_trend, so the inference target tracks the real trend.
   - name: observed_resistance
     iteration: observedResistance
     params:
-      mean: [0.13]
+      mean: [0.11]
       covariance_matrix: [0.0004]
+    params_from_upstream:
+      mean:
+        upstream: resistance_trend
     init_state_values: [0.11]
     state_history_depth: 500
     seed: 291
@@ -18,7 +49,7 @@ main:
     - likelihoodForObsGen: "&inference.NormalLikelihoodDistribution{}"
     - observedResistance: "&inference.DataGenerationIteration{Likelihood: likelihoodForObsGen}"
 
-  # Partition 1: Rolling mean of observed resistance
+  # Partition 3: Rolling mean of observed resistance
   - name: observed_rolling_mean
     iteration: observedRollingMean
     params:
@@ -38,7 +69,7 @@ main:
     - expKernelMean: "&kernels.ExponentialIntegrationKernel{}"
     - observedRollingMean: "&general.ValuesFunctionVectorMeanIteration{Function: general.DataValuesFunction, Kernel: expKernelMean}"
 
-  # Partition 2: Rolling covariance of observed resistance
+  # Partition 4: Rolling covariance of observed resistance
   - name: observed_rolling_cov
     iteration: observedRollingCov
     params:
@@ -60,14 +91,14 @@ main:
     - expKernelCov: "&kernels.ExponentialIntegrationKernel{}"
     - observedRollingCov: "&general.ValuesFunctionVectorCovarianceIteration{Function: general.DataValuesFunction, Kernel: expKernelCov}"
 
-  # Partition 3: Posterior log-normalisation
-  # Embedded sim output: mean_copy(1) + cov_copy(1) + colonisation(2) + resistance_extract(1) + loglike(1) = 6
-  # loglike is at index 5
+  # Partition 5: Posterior log-normalisation
+  # Embedded sim output: mean_copy(1) + cov_copy(1) + prescribing_copy(1) + colonisation(2) + resistance_extract(1) + loglike(1) = 7
+  # loglike is at index 6
   - name: params_posterior_log_norm
     iteration: paramsPosteriorLogNorm
     params:
       past_discounting_factor: [0.5]
-      loglike_indices: [5]
+      loglike_indices: [6]
     params_as_partitions:
       loglike_partitions: [amr_embedded_simulation]
     init_state_values: [0.0]
@@ -78,12 +109,12 @@ main:
     extra_vars:
     - paramsPosteriorLogNorm: "&inference.PosteriorLogNormalisationIteration{}"
 
-  # Partition 4: Posterior mean of parameters
+  # Partition 6: Posterior mean of parameters
   # learned_params: [transmission_rate, selection_coefficient, fitness_cost, community_resistant_prevalence]
   - name: params_posterior_mean
     iteration: paramsPosteriorMean
     params:
-      loglike_indices: [5]
+      loglike_indices: [6]
     params_as_partitions:
       param_partitions: [params_generating_process]
       loglike_partitions: [amr_embedded_simulation]
@@ -98,11 +129,11 @@ main:
     extra_vars:
     - paramsPosteriorMean: "&inference.PosteriorMeanIteration{Transform: inference.MeanTransform}"
 
-  # Partition 5: Posterior covariance of parameters
+  # Partition 7: Posterior covariance of parameters
   - name: params_posterior_cov
     iteration: paramsPosteriorCov
     params:
-      loglike_indices: [5]
+      loglike_indices: [6]
     params_as_partitions:
       param_partitions: [params_generating_process]
       loglike_partitions: [amr_embedded_simulation]
@@ -119,7 +150,7 @@ main:
     extra_vars:
     - paramsPosteriorCov: "&inference.PosteriorCovarianceIteration{}"
 
-  # Partition 6: Parameter generating process (posterior sampler)
+  # Partition 8: Parameter generating process (posterior sampler)
   - name: params_generating_process
     iteration: paramsGeneratingProcess
     params:
@@ -138,8 +169,9 @@ main:
     - likelihoodForParamsGen: "&inference.NormalLikelihoodDistribution{}"
     - paramsGeneratingProcess: "&inference.DataGenerationIteration{Likelihood: likelihoodForParamsGen}"
 
-  # Partition 7: Embedded simulation
-  # Runs colonisation model with proposed params, compares to observed resistance
+  # Partition 9: Embedded simulation
+  # Runs colonisation model with proposed params and time-varying prescribing,
+  # compares to observed resistance trend
   - name: amr_embedded_simulation
     params:
       burn_in_steps: [100]
@@ -148,14 +180,18 @@ main:
       observed_rolling_cov_copy/update_from_partition_history: [observed_rolling_cov]
       observed_rolling_mean_copy/initial_state_from_partition_history: [observed_rolling_mean]
       observed_rolling_cov_copy/initial_state_from_partition_history: [observed_rolling_cov]
+      prescribing_copy/update_from_partition_history: [prescribing_trend]
+      prescribing_copy/initial_state_from_partition_history: [prescribing_trend]
     params_from_upstream:
       observed_rolling_mean_copy/latest_data_values:
         upstream: observed_rolling_mean
       observed_rolling_cov_copy/latest_data_values:
         upstream: observed_rolling_cov
+      prescribing_copy/latest_data_values:
+        upstream: prescribing_trend
       colonisation_sim/learned_params:
         upstream: params_generating_process
-    init_state_values: [0.11, 0.0004, 0.15, 0.05, 0.11, 0.0]
+    init_state_values: [0.11, 0.0004, 0.092, 0.15, 0.05, 0.11, 0.0]
     state_history_depth: 200
     seed: 6542
 
@@ -191,7 +227,19 @@ embedded:
     extra_packages:
     - github.com/umbralcalc/stochadex/pkg/general
 
-  # Inner partition 2: Colonisation simulation with proposed parameters
+  # Inner partition 2: Copy of prescribing trend
+  # Replays the outer prescribing_trend history so colonisation sees
+  # time-varying prescribing pressure within the embedded simulation.
+  - name: prescribing_copy
+    iteration: "&general.FromHistoryIteration{}"
+    params: {}
+    init_state_values: [0.092]
+    state_history_depth: 1
+    seed: 0
+    extra_packages:
+    - github.com/umbralcalc/stochadex/pkg/general
+
+  # Inner partition 3: Colonisation simulation with proposed parameters
   - name: colonisation_sim
     iteration: colonisationSim
     params:
@@ -202,20 +250,20 @@ embedded:
       selection_coefficient: [0.2]
       fitness_cost: [0.02]
       noise_scale: [0.005]
-      prescribing_rate: [0.09]
+      prescribing_partition: [2]
     init_state_values: [0.15, 0.05]
     state_history_depth: 1
     seed: 345122
     extra_packages:
-    - github.com/example/my-stochadex-project/pkg/amr
+    - github.com/umbralcalc/antimicrobial-resistance/pkg/amr
     extra_vars:
     - colonisationSim: "&amr.ColonisationDynamicsIteration{}"
 
-  # Inner partition 3: Extract just the resistance fraction (index 1) from colonisation
+  # Inner partition 4: Extract just the resistance fraction (index 1) from colonisation
   - name: resistance_extractor
     iteration: resistanceExtractor
     params:
-      partitions: [2]
+      partitions: [3]
       partition_state_values: [1]
     init_state_values: [0.05]
     state_history_depth: 1
@@ -225,7 +273,7 @@ embedded:
     extra_vars:
     - resistanceExtractor: "&general.CopyValuesIteration{}"
 
-  # Inner partition 4: Compare simulated resistance to observed
+  # Inner partition 5: Compare simulated resistance to observed
   - name: data_comparison
     iteration: dataComparison
     params:
@@ -251,6 +299,6 @@ embedded:
   simulation:
     output_condition: "&simulator.NilOutputCondition{}"
     output_function: "&simulator.NilOutputFunction{}"
-    termination_condition: "&simulator.NumberOfStepsTerminationCondition{MaxNumberOfSteps: 200}"
+    termination_condition: "&simulator.NumberOfStepsTerminationCondition{MaxNumberOfSteps: 40}"
     timestep_function: "&general.FromHistoryTimestepFunction{}"
     init_time_value: 0.0

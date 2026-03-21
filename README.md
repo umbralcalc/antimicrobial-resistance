@@ -108,38 +108,38 @@ The simulation structure follows the stochadex pattern — analogous to the rugb
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    ENVIRONMENT                       │
-│  Community resistance prevalence (exogenous input)   │
+│                    ENVIRONMENT                      │
+│  Community resistance prevalence (exogenous input)  │
 └──────────────┬──────────────────────────────────────┘
                │ admission with colonisation status
                ▼
 ┌─────────────────────────────────────────────────────┐
-│               PATIENT POPULATION                     │
-│  Stochastic admission/discharge/length-of-stay       │
-│  State: [susceptible-colonised, resistant-colonised, │
-│          uncolonised]                                │
+│               PATIENT POPULATION                    │
+│  Stochastic admission/discharge/length-of-stay      │
+│  State: [susceptible-colonised, resistant-colonised,│
+│          uncolonised]                               │
 └──────┬──────────────────┬───────────────────────────┘
        │                  │
        ▼                  ▼
 ┌──────────────┐  ┌──────────────────────────────────┐
-│  INFECTION   │  │  WITHIN-HOSPITAL TRANSMISSION     │
-│  PROCESS     │  │  Contact rate × colonisation      │
-│  Col → BSI   │  │  pressure × hygiene effectiveness │
+│  INFECTION   │  │  WITHIN-HOSPITAL TRANSMISSION    │
+│  PROCESS     │  │  Contact rate × colonisation     │
+│  Col → BSI   │  │  pressure × hygiene effectiveness│
 └──────┬───────┘  └──────────────────────────────────┘
        │
        ▼
 ┌─────────────────────────────────────────────────────┐
-│            PRESCRIBING PROCESS                       │
-│  Antibiotic class selection rates (POLICY LEVER)     │
-│  Empiric → targeted transition on culture results    │
+│            PRESCRIBING PROCESS                      │
+│  Antibiotic class selection rates (POLICY LEVER)    │
+│  Empiric → targeted transition on culture results   │
 └──────────────┬──────────────────────────────────────┘
                │ selective pressure
                ▼
 ┌─────────────────────────────────────────────────────┐
-│          RESISTANCE SELECTION DYNAMICS                │
-│  Prescribing pressure shifts R/S ratio               │
-│  Fitness cost allows partial reversion               │
-│  Horizontal gene transfer component                  │
+│          RESISTANCE SELECTION DYNAMICS              │
+│  Prescribing pressure shifts R/S ratio              │
+│  Fitness cost allows partial reversion              │
+│  Horizontal gene transfer component                 │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -194,6 +194,7 @@ Go notebooks in `nbs/` provide interactive visualisation using the [GoNB](https:
 
 - **`nbs/data_exploration.ipynb`** — Fingertips data exploration: England-level prescribing and resistance time series, ICB sub-location cross-sectional scatter, trust-level E. coli bacteraemia rates.
 - **`nbs/model_validation.ipynb`** — Simulation and inference diagnostics: colonisation dynamics, infection process, posterior mean/variance convergence, parameter sample scatter plots, log-normalisation tracking.
+- **`nbs/policy_comparison.ipynb`** — Decision science layer: prescribing rate, resistance ratio, colonisation dynamics, and cumulative resistant BSI comparison across four stewardship policies.
 
 ### 2.7 Exploratory findings
 
@@ -223,18 +224,18 @@ Apply the same approach used across all previous stochadex projects:
 
 ### 3.2 Current inference results
 
-The SBI pipeline (`cfg/amr_inference.yaml`) learns 4 parameters from the England-level resistance time series. Posterior means converge within ~50 steps:
+The SBI pipeline (`cfg/amr_inference.yaml`) learns 4 parameters from the England-level resistance time series using time-varying prescribing and resistance targets (cycling through the 40 quarterly observations). Posterior means converge within ~50 steps:
 
 | Parameter | Posterior mean | Interpretation |
 |-----------|---------------|----------------|
-| `transmission_rate` | 0.0547 | Within-hospital colonisation acquisition rate |
-| `selection_coefficient` | 0.1751 | Cephalosporin prescribing shifts R/S ratio |
-| `fitness_cost` | 0.0280 | Resistant strain reversion rate without pressure |
-| `community_resistant_prevalence` | 0.0884 | Baseline resistant colonisation at admission |
+| `transmission_rate` | 0.0384 | Within-hospital colonisation acquisition rate |
+| `selection_coefficient` | 0.1351 | Cephalosporin prescribing shifts R/S ratio |
+| `fitness_cost` | 0.0170 | Resistant strain reversion rate without pressure |
+| `community_resistant_prevalence` | 0.1164 | Baseline resistant colonisation at admission |
 
 Run `python3 dat/plot_inference.py` for convergence plots, `python3 dat/plot_validation.py` for simulated vs observed comparison.
 
-The simulated trajectories with learned parameters reproduce the observed upward resistance trend (0.11 → 0.15 over 40 quarters), though the model slightly underestimates the recent 2024–2025 acceleration because it uses constant prescribing pressure.
+The inference uses time-varying inputs: the observed resistance mean drives `DataGenerationIteration` to track the real 0.11 → 0.17 trend, and the observed prescribing time series is replayed inside the embedded simulation via `FromHistoryIteration`. Data is cycled over 1000 inference steps to ensure posterior convergence.
 
 ### 3.3 Validation strategy
 
@@ -266,7 +267,27 @@ Simulate multiple trajectories under each policy and evaluate:
 - **Constraint:** Treatment adequacy — empiric therapy must achieve ≥ X% appropriate coverage
 - **Secondary outcomes:** Total antibiotic consumption (DDDs), AWaRe category mix, time until resistance threshold is breached
 
-### 4.3 Output
+### 4.3 Current implementation
+
+Four prescribing policies are implemented, each a drop-in replacement for partition 0 (outputting `[cephalosporin_rate]`):
+
+| Policy | Iteration | Key Params | Source |
+|--------|-----------|------------|--------|
+| Baseline (constant) | `ParamValuesIteration` (built-in) | `param_values: [0.3]` | — |
+| Antibiotic cycling | `CyclingPrescribingIteration` | `high_rate`, `low_rate`, `cycle_period` | `pkg/amr/cycling.go` |
+| Threshold escalation | `ThresholdPrescribingIteration` | `default_rate`, `escalation_rate`, `resistance_threshold` | `pkg/amr/threshold.go` |
+| Restriction | `RestrictionPrescribingIteration` | `initial_rate`, `target_rate`, `ramp_period` | `pkg/amr/restriction.go` |
+
+Run each policy with learned parameters:
+```bash
+go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_policy_baseline.yaml
+go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_policy_cycling.yaml
+go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_policy_threshold.yaml
+go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_policy_restriction.yaml
+python3 dat/plot_policy_comparison.py  # comparison plot
+```
+
+### 4.4 Output
 
 For each trust or trust archetype, produce a policy recommendation analogous to the rugby finding ("front row forwards are best substituted at ~60 minutes"):
 
@@ -311,7 +332,7 @@ Once the core two-strain *E. coli* model is validated:
 
 ### Week 7–8: Decision science layer
 
-- [ ] Implement 3–4 candidate prescribing policies as action sets
+- [x] Implement 3–4 candidate prescribing policies as action sets
 - [ ] Run policy evaluation: simulate multiple trajectories under each policy
 - [ ] Produce initial findings and visualisations
 - [ ] Write up as a blog post in the "Engineering Smart Actions in Practice" series

@@ -1,8 +1,7 @@
 main:
   partitions:
 
-  # Partition 0: Prescribing input — cephalosporin prescribing rate as policy lever
-  # State: [cephalosporin_rate]
+  # Partition 0: Baseline policy — constant cephalosporin prescribing rate
   - name: prescribing
     iteration: prescribing
     params:
@@ -15,17 +14,16 @@ main:
     extra_vars:
     - prescribing: "&general.ParamValuesIteration{}"
 
-  # Partition 1: Two-strain colonisation dynamics (susceptible/resistant E. coli)
-  # State: [susceptible_fraction, resistant_fraction]
+  # Partition 1: Colonisation dynamics with learned parameters
   - name: colonisation
     iteration: colonisation
     params:
       community_susceptible_prevalence: [0.15]
-      community_resistant_prevalence: [0.05]
+      community_resistant_prevalence: [0.1164]
       turnover_rate: [0.1]
-      transmission_rate: [0.05]
-      selection_coefficient: [0.2]
-      fitness_cost: [0.02]
+      transmission_rate: [0.0384]
+      selection_coefficient: [0.1351]
+      fitness_cost: [0.0170]
       noise_scale: [0.01]
       prescribing_partition: [0]
     init_state_values: [0.15, 0.05]
@@ -36,8 +34,7 @@ main:
     extra_vars:
     - colonisation: "&amr.ColonisationDynamicsIteration{}"
 
-  # Partition 2: Infection process — colonisation to bloodstream infection
-  # State: [susceptible_bsi_count, resistant_bsi_count]
+  # Partition 2: Infection process
   - name: infection
     iteration: infection
     params:
@@ -54,7 +51,7 @@ main:
 
   simulation:
     output_condition: "&simulator.EveryStepOutputCondition{}"
-    output_function: "simulator.NewJsonLogOutputFunction(\"./dat/simulation_output.log\")"
-    termination_condition: "&simulator.NumberOfStepsTerminationCondition{MaxNumberOfSteps: 60}"
+    output_function: "simulator.NewJsonLogOutputFunction(\"./dat/policy_baseline_output.log\")"
+    termination_condition: "&simulator.NumberOfStepsTerminationCondition{MaxNumberOfSteps: 200}"
     timestep_function: "&simulator.ConstantTimestepFunction{Stepsize: 1.0}"
     init_time_value: 0.0
