@@ -1,0 +1,256 @@
+main:
+  partitions:
+
+  # Partition 0: Observed resistance data stream
+  # Generates synthetic observed data from the England E. coli 3GC resistance
+  # time series statistics (mean ~0.13, variance ~0.0004)
+  - name: observed_resistance
+    iteration: observedResistance
+    params:
+      mean: [0.13]
+      covariance_matrix: [0.0004]
+    init_state_values: [0.11]
+    state_history_depth: 500
+    seed: 291
+    extra_packages:
+    - github.com/umbralcalc/stochadex/pkg/inference
+    extra_vars:
+    - likelihoodForObsGen: "&inference.NormalLikelihoodDistribution{}"
+    - observedResistance: "&inference.DataGenerationIteration{Likelihood: likelihoodForObsGen}"
+
+  # Partition 1: Rolling mean of observed resistance
+  - name: observed_rolling_mean
+    iteration: observedRollingMean
+    params:
+      exponential_weighting_timescale: [8.0]
+    params_as_partitions:
+      data_values_partition: [observed_resistance]
+    params_from_upstream:
+      latest_data_values:
+        upstream: observed_resistance
+    init_state_values: [0.11]
+    state_history_depth: 200
+    seed: 0
+    extra_packages:
+    - github.com/umbralcalc/stochadex/pkg/kernels
+    - github.com/umbralcalc/stochadex/pkg/general
+    extra_vars:
+    - expKernelMean: "&kernels.ExponentialIntegrationKernel{}"
+    - observedRollingMean: "&general.ValuesFunctionVectorMeanIteration{Function: general.DataValuesFunction, Kernel: expKernelMean}"
+
+  # Partition 2: Rolling covariance of observed resistance
+  - name: observed_rolling_cov
+    iteration: observedRollingCov
+    params:
+      exponential_weighting_timescale: [8.0]
+    params_as_partitions:
+      data_values_partition: [observed_resistance]
+    params_from_upstream:
+      latest_data_values:
+        upstream: observed_resistance
+      mean:
+        upstream: observed_rolling_mean
+    init_state_values: [0.0004]
+    state_history_depth: 200
+    seed: 0
+    extra_packages:
+    - github.com/umbralcalc/stochadex/pkg/kernels
+    - github.com/umbralcalc/stochadex/pkg/general
+    extra_vars:
+    - expKernelCov: "&kernels.ExponentialIntegrationKernel{}"
+    - observedRollingCov: "&general.ValuesFunctionVectorCovarianceIteration{Function: general.DataValuesFunction, Kernel: expKernelCov}"
+
+  # Partition 3: Posterior log-normalisation
+  # Embedded sim output: mean_copy(1) + cov_copy(1) + colonisation(2) + resistance_extract(1) + loglike(1) = 6
+  # loglike is at index 5
+  - name: params_posterior_log_norm
+    iteration: paramsPosteriorLogNorm
+    params:
+      past_discounting_factor: [0.5]
+      loglike_indices: [5]
+    params_as_partitions:
+      loglike_partitions: [amr_embedded_simulation]
+    init_state_values: [0.0]
+    state_history_depth: 1
+    seed: 0
+    extra_packages:
+    - github.com/umbralcalc/stochadex/pkg/inference
+    extra_vars:
+    - paramsPosteriorLogNorm: "&inference.PosteriorLogNormalisationIteration{}"
+
+  # Partition 4: Posterior mean of parameters
+  # learned_params: [transmission_rate, selection_coefficient, fitness_cost, community_resistant_prevalence]
+  - name: params_posterior_mean
+    iteration: paramsPosteriorMean
+    params:
+      loglike_indices: [5]
+    params_as_partitions:
+      param_partitions: [params_generating_process]
+      loglike_partitions: [amr_embedded_simulation]
+    params_from_upstream:
+      posterior_log_normalisation:
+        upstream: params_posterior_log_norm
+    init_state_values: [0.05, 0.2, 0.02, 0.05]
+    state_history_depth: 1
+    seed: 0
+    extra_packages:
+    - github.com/umbralcalc/stochadex/pkg/inference
+    extra_vars:
+    - paramsPosteriorMean: "&inference.PosteriorMeanIteration{Transform: inference.MeanTransform}"
+
+  # Partition 5: Posterior covariance of parameters
+  - name: params_posterior_cov
+    iteration: paramsPosteriorCov
+    params:
+      loglike_indices: [5]
+    params_as_partitions:
+      param_partitions: [params_generating_process]
+      loglike_partitions: [amr_embedded_simulation]
+    params_from_upstream:
+      posterior_log_normalisation:
+        upstream: params_posterior_log_norm
+      mean:
+        upstream: params_posterior_mean
+    init_state_values: [0.001, 0.0, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0, 0.001]
+    state_history_depth: 1
+    seed: 0
+    extra_packages:
+    - github.com/umbralcalc/stochadex/pkg/inference
+    extra_vars:
+    - paramsPosteriorCov: "&inference.PosteriorCovarianceIteration{}"
+
+  # Partition 6: Parameter generating process (posterior sampler)
+  - name: params_generating_process
+    iteration: paramsGeneratingProcess
+    params:
+      default_covariance: [0.001, 0.0, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0, 0.001]
+    params_from_upstream:
+      mean:
+        upstream: params_posterior_mean
+      covariance_matrix:
+        upstream: params_posterior_cov
+    init_state_values: [0.05, 0.2, 0.02, 0.05]
+    state_history_depth: 1
+    seed: 112424
+    extra_packages:
+    - github.com/umbralcalc/stochadex/pkg/inference
+    extra_vars:
+    - likelihoodForParamsGen: "&inference.NormalLikelihoodDistribution{}"
+    - paramsGeneratingProcess: "&inference.DataGenerationIteration{Likelihood: likelihoodForParamsGen}"
+
+  # Partition 7: Embedded simulation
+  # Runs colonisation model with proposed params, compares to observed resistance
+  - name: amr_embedded_simulation
+    params:
+      burn_in_steps: [100]
+    params_as_partitions:
+      observed_rolling_mean_copy/update_from_partition_history: [observed_rolling_mean]
+      observed_rolling_cov_copy/update_from_partition_history: [observed_rolling_cov]
+      observed_rolling_mean_copy/initial_state_from_partition_history: [observed_rolling_mean]
+      observed_rolling_cov_copy/initial_state_from_partition_history: [observed_rolling_cov]
+    params_from_upstream:
+      observed_rolling_mean_copy/latest_data_values:
+        upstream: observed_rolling_mean
+      observed_rolling_cov_copy/latest_data_values:
+        upstream: observed_rolling_cov
+      colonisation_sim/learned_params:
+        upstream: params_generating_process
+    init_state_values: [0.11, 0.0004, 0.15, 0.05, 0.11, 0.0]
+    state_history_depth: 200
+    seed: 6542
+
+  simulation:
+    output_condition: "&simulator.EveryStepOutputCondition{}"
+    output_function: "simulator.NewJsonLogOutputFunction(\"./dat/inference_output.log\")"
+    termination_condition: "&simulator.NumberOfStepsTerminationCondition{MaxNumberOfSteps: 1000}"
+    timestep_function: "&simulator.ConstantTimestepFunction{Stepsize: 1.0}"
+    init_time_value: 0.0
+
+embedded:
+
+- name: amr_embedded_simulation
+  partitions:
+
+  # Inner partition 0: Copy of observed rolling mean
+  - name: observed_rolling_mean_copy
+    iteration: "&general.FromHistoryIteration{}"
+    params: {}
+    init_state_values: [0.11]
+    state_history_depth: 1
+    seed: 0
+    extra_packages:
+    - github.com/umbralcalc/stochadex/pkg/general
+
+  # Inner partition 1: Copy of observed rolling covariance
+  - name: observed_rolling_cov_copy
+    iteration: "&general.FromHistoryIteration{}"
+    params: {}
+    init_state_values: [0.0004]
+    state_history_depth: 1
+    seed: 0
+    extra_packages:
+    - github.com/umbralcalc/stochadex/pkg/general
+
+  # Inner partition 2: Colonisation simulation with proposed parameters
+  - name: colonisation_sim
+    iteration: colonisationSim
+    params:
+      community_susceptible_prevalence: [0.15]
+      community_resistant_prevalence: [0.05]
+      turnover_rate: [0.1]
+      transmission_rate: [0.05]
+      selection_coefficient: [0.2]
+      fitness_cost: [0.02]
+      noise_scale: [0.005]
+      prescribing_rate: [0.09]
+    init_state_values: [0.15, 0.05]
+    state_history_depth: 1
+    seed: 345122
+    extra_packages:
+    - github.com/example/my-stochadex-project/pkg/amr
+    extra_vars:
+    - colonisationSim: "&amr.ColonisationDynamicsIteration{}"
+
+  # Inner partition 3: Extract just the resistance fraction (index 1) from colonisation
+  - name: resistance_extractor
+    iteration: resistanceExtractor
+    params:
+      partitions: [2]
+      partition_state_values: [1]
+    init_state_values: [0.05]
+    state_history_depth: 1
+    seed: 0
+    extra_packages:
+    - github.com/umbralcalc/stochadex/pkg/general
+    extra_vars:
+    - resistanceExtractor: "&general.CopyValuesIteration{}"
+
+  # Inner partition 4: Compare simulated resistance to observed
+  - name: data_comparison
+    iteration: dataComparison
+    params:
+      cumulative: [1]
+      burn_in_steps: [50]
+      default_covariance: [0.001]
+    params_from_upstream:
+      mean:
+        upstream: observed_rolling_mean_copy
+      covariance_matrix:
+        upstream: observed_rolling_cov_copy
+      latest_data_values:
+        upstream: resistance_extractor
+    init_state_values: [0.0]
+    state_history_depth: 1
+    seed: 0
+    extra_packages:
+    - github.com/umbralcalc/stochadex/pkg/inference
+    extra_vars:
+    - likelihoodForComp: "&inference.NormalLikelihoodDistribution{}"
+    - dataComparison: "&inference.DataComparisonIteration{Likelihood: likelihoodForComp}"
+
+  simulation:
+    output_condition: "&simulator.NilOutputCondition{}"
+    output_function: "&simulator.NilOutputFunction{}"
+    termination_condition: "&simulator.NumberOfStepsTerminationCondition{MaxNumberOfSteps: 200}"
+    timestep_function: "&general.FromHistoryTimestepFunction{}"
+    init_time_value: 0.0

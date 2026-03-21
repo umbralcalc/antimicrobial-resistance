@@ -72,7 +72,12 @@ main:
 go build ./...                                    # compile this project
 go test -count=1 ./...                            # run all tests
 go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_simulation.yaml
+go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_inference.yaml
 ./dat/fetch_fingertips.sh                         # download Fingertips AMR data
+python3 dat/prepare_baseline.py                   # prepare baseline event rates
+python3 dat/explore.py                            # exploratory analysis plots
+python3 dat/plot_inference.py                     # plot inference results
+python3 dat/plot_validation.py                    # plot validation comparison
 ```
 
 ## Testing Conventions

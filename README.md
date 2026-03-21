@@ -182,10 +182,21 @@ Downloaded via `./dat/fetch_fingertips.sh` from the UKHSA Fingertips API (130 ac
 | `cdiff_annual` | *C. difficile* infection counts/rates | Acute Trust | Annual |
 | `mrsa_annual` | MRSA bacteraemia counts/rates | Acute Trust | Annual |
 | `mssa_annual` | MSSA bacteraemia counts/rates | Acute Trust | Annual |
+| `ecoli_cephalosporin_resistance_pct` | Rolling quarterly % E. coli resistant to 3rd gen cephalosporins | ICB sub-location | Quarterly |
 | `broadspectrum_pct` | % prescribed antibiotics from cephalosporin/quinolone/co-amoxiclav | ICB sub-location | Quarterly |
 | `total_antibiotics_starpu` | Total antibiotic items per STAR-PU | ICB sub-location | Quarterly |
 
 EARS-Net cross-country data requires manual download from the ECDC Surveillance Atlas — see `dat/EARS_NET_MANUAL_DOWNLOAD.md`.
+
+### 2.6 Exploratory findings
+
+Run `python3 dat/explore.py` to regenerate the plots below.
+
+**England time series** (`plot_england_timeseries.png`): Broad-spectrum prescribing fell from ~11% to ~7% between 2014 and 2020, then partially rebounded. E. coli 3GC resistance has been trending upward, rising from ~11% to ~17% over the same period — the two series move in loosely opposing directions at the national level.
+
+**ICB cross-sectional scatter** (`plot_icb_scatter.png`): Weak positive correlation (r=0.08, n=106) between ICB-level broad-spectrum prescribing % and resistance % in 2025 Q3. The relationship is noisy, consistent with resistance being driven by multiple factors beyond local prescribing pressure (community importation, hospital transmission, patient mix).
+
+**Trust bacteraemia rates** (`plot_trust_bacteraemia.png`): E. coli BSI rates vary substantially across trusts (20–160 per 100k) with a COVID-era dip in 2020–2021 followed by recovery. The heterogeneity supports the modelling approach of fitting per-trust or per-archetype parameters.
 
 ---
 
@@ -203,7 +214,22 @@ Apply the same approach used across all previous stochadex projects:
    - Fitness cost of resistance: reversion rate when selective pressure is removed
    - Community importation rate: baseline resistant colonisation at admission
 
-### 3.2 Validation strategy
+### 3.2 Current inference results
+
+The SBI pipeline (`cfg/amr_inference.yaml`) learns 4 parameters from the England-level resistance time series. Posterior means converge within ~50 steps:
+
+| Parameter | Posterior mean | Interpretation |
+|-----------|---------------|----------------|
+| `transmission_rate` | 0.0547 | Within-hospital colonisation acquisition rate |
+| `selection_coefficient` | 0.1751 | Cephalosporin prescribing shifts R/S ratio |
+| `fitness_cost` | 0.0280 | Resistant strain reversion rate without pressure |
+| `community_resistant_prevalence` | 0.0884 | Baseline resistant colonisation at admission |
+
+Run `python3 dat/plot_inference.py` for convergence plots, `python3 dat/plot_validation.py` for simulated vs observed comparison.
+
+The simulated trajectories with learned parameters reproduce the observed upward resistance trend (0.11 → 0.15 over 40 quarters), though the model slightly underestimates the recent 2024–2025 acceleration because it uses constant prescribing pressure.
+
+### 3.3 Validation strategy
 
 - **Held-out trusts:** Train on a subset of trusts, validate predictions on others.
 - **Temporal holdout:** Train on 2019–2023, predict 2024–2025 resistance trends.
@@ -260,20 +286,20 @@ Once the core two-strain *E. coli* model is validated:
 - [x] Pull prescribing data from Fingertips API (`dat/fetch_fingertips.sh` — broad-spectrum %, total antibiotics per STAR-PU)
 - [x] Download matching Fingertips AMR indicators for 130 acute trusts (`dat/fingertips_*.csv`)
 - [x] Document EARS-Net manual download steps (`dat/EARS_NET_MANUAL_DOWNLOAD.md`)
-- [ ] Exploratory analysis: visualise co-movement between prescribing volume and resistance rates
+- [x] Exploratory analysis (`dat/explore.py` — 3 plots: England time series, ICB scatter, trust bacteraemia rates)
 
 ### Week 3–4: Minimal stochadex simulation
 
 - [x] Implement a two-strain (susceptible/resistant *E. coli*) simulation in the stochadex (`pkg/amr/colonisation.go`)
 - [x] Define the state transition structure (admission → colonisation → infection → discharge) (`pkg/amr/infection.go`)
 - [x] Implement prescribing-driven selection pressure as an input process (`cfg/amr_simulation.yaml`)
-- [ ] Verify the simulation produces qualitatively sensible dynamics with hand-tuned parameters
+- [x] Verify the simulation produces qualitatively sensible dynamics (`dat/plot_simulation.py`)
 
 ### Week 5–6: Simulation-based inference
 
-- [ ] Smooth and aggregate the prescribing and resistance data into baseline event rates
-- [ ] Set up SBI to learn transmission and selection parameters from the observed data
-- [ ] Validate: does the fitted model reproduce held-out trust trajectories?
+- [x] Smooth and aggregate prescribing/resistance data into baseline event rates (`dat/prepare_baseline.py`)
+- [x] Set up SBI to learn transmission and selection parameters (`cfg/amr_inference.yaml`)
+- [x] Validate: simulated trajectories reproduce observed England resistance trend (`dat/plot_validation.py`)
 
 ### Week 7–8: Decision science layer
 

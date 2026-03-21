@@ -22,9 +22,11 @@ import (
 //   - selection_coefficient: how cephalosporin use shifts R/S ratio
 //   - fitness_cost: reversion rate from R to S absent selective pressure
 //   - noise_scale: diffusion coefficient for stochastic fluctuations
-//   - prescribing_partition: index of the partition providing prescribing rates
+//   - prescribing_partition: index of partition providing prescribing rates (optional)
+//   - prescribing_rate: direct prescribing rate value (used if prescribing_partition absent)
 type ColonisationDynamicsIteration struct {
 	prescribingPartitionIndex int
+	usePartitionPrescribing   bool
 	rng                       *rand.Rand
 }
 
@@ -32,9 +34,10 @@ func (c *ColonisationDynamicsIteration) Configure(
 	partitionIndex int,
 	settings *simulator.Settings,
 ) {
-	c.prescribingPartitionIndex = int(
-		settings.Iterations[partitionIndex].Params.Map["prescribing_partition"][0],
-	)
+	if pp, ok := settings.Iterations[partitionIndex].Params.Map["prescribing_partition"]; ok {
+		c.prescribingPartitionIndex = int(pp[0])
+		c.usePartitionPrescribing = true
+	}
 	c.rng = rand.New(rand.NewSource(
 		int64(settings.Iterations[partitionIndex].Seed),
 	))
@@ -46,22 +49,39 @@ func (c *ColonisationDynamicsIteration) Iterate(
 	stateHistories []*simulator.StateHistory,
 	timestepsHistory *simulator.CumulativeTimestepsHistory,
 ) []float64 {
-	// Read parameters
-	communityS := params.Map["community_susceptible_prevalence"][0]
-	communityR := params.Map["community_resistant_prevalence"][0]
-	turnover := params.Map["turnover_rate"][0]
-	transmission := params.Map["transmission_rate"][0]
-	selection := params.Map["selection_coefficient"][0]
-	fitnessCost := params.Map["fitness_cost"][0]
-	noiseScale := params.Map["noise_scale"][0]
+	// Read parameters — either from learned_params vector or individual keys
+	var communityS, communityR, turnover, transmission, selection, fitnessCost, noiseScale float64
+	if lp, ok := params.Map["learned_params"]; ok && len(lp) >= 4 {
+		// learned_params: [transmission_rate, selection_coefficient, fitness_cost, community_resistant_prevalence]
+		transmission = math.Abs(lp[0])
+		selection = math.Abs(lp[1])
+		fitnessCost = math.Abs(lp[2])
+		communityR = math.Max(0, math.Min(1, lp[3]))
+		communityS = params.Map["community_susceptible_prevalence"][0]
+		turnover = params.Map["turnover_rate"][0]
+		noiseScale = params.Map["noise_scale"][0]
+	} else {
+		communityS = params.Map["community_susceptible_prevalence"][0]
+		communityR = params.Map["community_resistant_prevalence"][0]
+		turnover = params.Map["turnover_rate"][0]
+		transmission = params.Map["transmission_rate"][0]
+		selection = params.Map["selection_coefficient"][0]
+		fitnessCost = params.Map["fitness_cost"][0]
+		noiseScale = params.Map["noise_scale"][0]
+	}
 
 	// Current state
 	current := stateHistories[partitionIndex]
 	S := current.Values.At(0, 0)
 	R := current.Values.At(0, 1)
 
-	// Prescribing input: cephalosporin rate from upstream partition
-	cephRate := stateHistories[c.prescribingPartitionIndex].Values.At(0, 0)
+	// Prescribing input: from upstream partition or direct param
+	var cephRate float64
+	if c.usePartitionPrescribing {
+		cephRate = stateHistories[c.prescribingPartitionIndex].Values.At(0, 0)
+	} else {
+		cephRate = params.Map["prescribing_rate"][0]
+	}
 
 	// Time step
 	dt := timestepsHistory.NextIncrement

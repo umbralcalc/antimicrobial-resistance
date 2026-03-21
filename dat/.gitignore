@@ -1,6 +1,16 @@
 # Downloaded data files (re-fetch with ./dat/fetch_fingertips.sh)
 *.csv
 
+# Generated plots (regenerate with python3 dat/explore.py, plot_inference.py, etc.)
+*.png
+
+# Prepared SBI data (regenerate with python3 dat/prepare_sbi_data.py)
+*.json
+
+# Simulation and inference output
+*.log
+*.txt
+
 # Keep this directory tracked
 !.gitkeep
 !.gitignore

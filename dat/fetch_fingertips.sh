@@ -42,6 +42,9 @@ fetch mrsa_annual                        92171 14
 fetch mssa_annual                        92176 14
 fetch ecoli_hospital_onset_annual        92523 14
 
+# Resistance indicators (ICB sub-location, area_type_id=66)
+fetch ecoli_cephalosporin_resistance_pct 92559 66
+
 # Prescribing indicators (ICB sub-location, area_type_id=66)
 fetch broadspectrum_pct                  92167 66
 fetch total_antibiotics_starpu           91900 66
