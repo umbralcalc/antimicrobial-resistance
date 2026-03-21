@@ -54,7 +54,7 @@ main:
 
   simulation:
     output_condition: "&simulator.EveryStepOutputCondition{}"
-    output_function: "&simulator.StdoutOutputFunction{}"
+    output_function: "simulator.NewJsonLogOutputFunction(\"./dat/simulation_output.log\")"
     termination_condition: "&simulator.NumberOfStepsTerminationCondition{MaxNumberOfSteps: 60}"
     timestep_function: "&simulator.ConstantTimestepFunction{Stepsize: 1.0}"
     init_time_value: 0.0

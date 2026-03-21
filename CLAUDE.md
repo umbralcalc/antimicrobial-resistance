@@ -80,6 +80,20 @@ python3 dat/plot_inference.py                     # plot inference results
 python3 dat/plot_validation.py                    # plot validation comparison
 ```
 
+## Notebooks
+
+Interactive Go notebooks in `nbs/` use the [GoNB](https://github.com/janpfeifer/gonb) Jupyter kernel with [go-echarts](https://github.com/go-echarts/go-echarts) for visualisation via [gonb-echarts](https://github.com/janpfeifer/gonb-echarts).
+
+| Notebook | Purpose |
+|----------|---------|
+| `nbs/data_exploration.ipynb` | Fingertips data visualisation: England time series, ICB scatter, trust bacteraemia rates |
+| `nbs/model_validation.ipynb` | Simulation output plots (colonisation, infection) and inference diagnostics (posterior convergence, parameter samples, log-normalisation) |
+
+**Conventions:**
+- Each code cell is self-contained: imports above `%%`, executable code below. Variables from `%%` blocks do NOT persist across cells in gonb.
+- Data loading is repeated per cell (e.g. `NewStateTimeStorageFromJsonLogEntries`) rather than shared across cells.
+- The `!*go mod edit -replace` cell at the top of each notebook is for local development — do not remove it.
+
 ## Testing Conventions
 
 - Unit tests live alongside source as `*_test.go` files.

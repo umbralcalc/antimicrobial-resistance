@@ -188,7 +188,14 @@ Downloaded via `./dat/fetch_fingertips.sh` from the UKHSA Fingertips API (130 ac
 
 EARS-Net cross-country data requires manual download from the ECDC Surveillance Atlas — see `dat/EARS_NET_MANUAL_DOWNLOAD.md`.
 
-### 2.6 Exploratory findings
+### 2.6 Interactive notebooks
+
+Go notebooks in `nbs/` provide interactive visualisation using the [GoNB](https://github.com/janpfeifer/gonb) Jupyter kernel with Apache ECharts via [gonb-echarts](https://github.com/janpfeifer/gonb-echarts):
+
+- **`nbs/data_exploration.ipynb`** — Fingertips data exploration: England-level prescribing and resistance time series, ICB sub-location cross-sectional scatter, trust-level E. coli bacteraemia rates.
+- **`nbs/model_validation.ipynb`** — Simulation and inference diagnostics: colonisation dynamics, infection process, posterior mean/variance convergence, parameter sample scatter plots, log-normalisation tracking.
+
+### 2.7 Exploratory findings
 
 Run `python3 dat/explore.py` to regenerate the plots below.
 
@@ -300,6 +307,7 @@ Once the core two-strain *E. coli* model is validated:
 - [x] Smooth and aggregate prescribing/resistance data into baseline event rates (`dat/prepare_baseline.py`)
 - [x] Set up SBI to learn transmission and selection parameters (`cfg/amr_inference.yaml`)
 - [x] Validate: simulated trajectories reproduce observed England resistance trend (`dat/plot_validation.py`)
+- [x] Build interactive Go notebooks for data exploration and model validation (`nbs/data_exploration.ipynb`, `nbs/model_validation.ipynb`)
 
 ### Week 7–8: Decision science layer
 
