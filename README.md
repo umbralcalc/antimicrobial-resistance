@@ -169,6 +169,24 @@ Run the simulation:
 go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_simulation.yaml
 ```
 
+### 2.5 Data acquired
+
+Downloaded via `./dat/fetch_fingertips.sh` from the UKHSA Fingertips API (130 acute trusts, quarterly, 2016 Q1–2025 Q4):
+
+| File | Indicator | Level | Frequency |
+|------|-----------|-------|-----------|
+| `ecoli_cephalosporin_susceptibility` | % E. coli blood specimens tested for 3rd gen cephalosporin susceptibility | Acute Trust | Quarterly |
+| `ecoli_bacteraemia_annual` | E. coli BSI case counts and rates | Acute Trust | Annual |
+| `ecoli_bacteraemia_rolling` | E. coli BSI 12-month rolling counts/rates | Acute Trust | Monthly |
+| `ecoli_hospital_onset_annual` | Hospital-onset E. coli BSI counts/rates | Acute Trust | Annual |
+| `cdiff_annual` | *C. difficile* infection counts/rates | Acute Trust | Annual |
+| `mrsa_annual` | MRSA bacteraemia counts/rates | Acute Trust | Annual |
+| `mssa_annual` | MSSA bacteraemia counts/rates | Acute Trust | Annual |
+| `broadspectrum_pct` | % prescribed antibiotics from cephalosporin/quinolone/co-amoxiclav | ICB sub-location | Quarterly |
+| `total_antibiotics_starpu` | Total antibiotic items per STAR-PU | ICB sub-location | Quarterly |
+
+EARS-Net cross-country data requires manual download from the ECDC Surveillance Atlas — see `dat/EARS_NET_MANUAL_DOWNLOAD.md`.
+
 ---
 
 ## Phase 3: Learning from Data
@@ -239,9 +257,9 @@ Once the core two-strain *E. coli* model is validated:
 
 ### Week 1–2: Data acquisition and exploration
 
-- [ ] Pull OpenPrescribing BNF 5.1 (antibacterial) data via API for 5–10 trusts
-- [ ] Download matching Fingertips AMR indicators for those trusts
-- [ ] Download EARS-Net time series for UK *E. coli* cephalosporin resistance
+- [x] Pull prescribing data from Fingertips API (`dat/fetch_fingertips.sh` — broad-spectrum %, total antibiotics per STAR-PU)
+- [x] Download matching Fingertips AMR indicators for 130 acute trusts (`dat/fingertips_*.csv`)
+- [x] Document EARS-Net manual download steps (`dat/EARS_NET_MANUAL_DOWNLOAD.md`)
 - [ ] Exploratory analysis: visualise co-movement between prescribing volume and resistance rates
 
 ### Week 3–4: Minimal stochadex simulation

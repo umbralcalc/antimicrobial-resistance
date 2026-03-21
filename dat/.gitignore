@@ -1,0 +1,6 @@
+# Downloaded data files (re-fetch with ./dat/fetch_fingertips.sh)
+*.csv
+
+# Keep this directory tracked
+!.gitkeep
+!.gitignore

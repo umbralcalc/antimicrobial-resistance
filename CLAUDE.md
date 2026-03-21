@@ -72,6 +72,7 @@ main:
 go build ./...                                    # compile this project
 go test -count=1 ./...                            # run all tests
 go run github.com/umbralcalc/stochadex/cmd/stochadex --config cfg/amr_simulation.yaml
+./dat/fetch_fingertips.sh                         # download Fingertips AMR data
 ```
 
 ## Testing Conventions
