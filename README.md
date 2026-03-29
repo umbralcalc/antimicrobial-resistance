@@ -131,10 +131,10 @@ Cumulative resistant BSI over 200 time steps (mean ± 2σ across 10 seeds):
 
 | Policy | Cumulative resistant BSI | vs Baseline | Final resistance ratio |
 |--------|------------------------:|------------:|----------------------:|
-| Baseline | 186.8 ± 28.0 | — | 0.546 ± 0.031 |
-| Cycling | 165.8 ± 35.5 | −11.2% | 0.481 ± 0.034 |
-| Threshold | 152.7 ± 23.1 | **−18.3%** | 0.447 ± 0.032 |
-| Restriction | 152.5 ± 24.4 | **−18.4%** | 0.430 ± 0.035 |
+| Baseline | 186.8 ± 29.5 | — | 0.546 ± 0.033 |
+| Cycling | 165.8 ± 37.5 | −11.2% | 0.481 ± 0.036 |
+| Threshold | 152.7 ± 24.4 | **−18.3%** | 0.447 ± 0.034 |
+| Restriction | 152.5 ± 25.7 | **−18.4%** | 0.430 ± 0.037 |
 
 ### Findings
 

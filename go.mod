@@ -5,6 +5,7 @@ go 1.25.2
 require github.com/umbralcalc/stochadex v0.0.0-20260329101819-139d2f8ca54e
 
 require (
+	github.com/akamensky/argparse v1.4.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
 	gonum.org/v1/gonum v0.17.0 // indirect
