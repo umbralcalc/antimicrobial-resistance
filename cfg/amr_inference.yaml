@@ -46,7 +46,7 @@ main:
     extra_packages:
     - github.com/umbralcalc/stochadex/pkg/inference
     extra_vars:
-    - likelihoodForObsGen: "&inference.NormalLikelihoodDistribution{}"
+    - likelihoodForObsGen: "&inference.NormalLikelihoodDistribution{AllowDefaultCovarianceFallback: true}"
     - observedResistance: "&inference.DataGenerationIteration{Likelihood: likelihoodForObsGen}"
 
   # Partition 3: Rolling mean of observed resistance
@@ -166,7 +166,7 @@ main:
     extra_packages:
     - github.com/umbralcalc/stochadex/pkg/inference
     extra_vars:
-    - likelihoodForParamsGen: "&inference.NormalLikelihoodDistribution{}"
+    - likelihoodForParamsGen: "&inference.NormalLikelihoodDistribution{AllowDefaultCovarianceFallback: true}"
     - paramsGeneratingProcess: "&inference.DataGenerationIteration{Likelihood: likelihoodForParamsGen}"
 
   # Partition 9: Embedded simulation
@@ -293,7 +293,7 @@ embedded:
     extra_packages:
     - github.com/umbralcalc/stochadex/pkg/inference
     extra_vars:
-    - likelihoodForComp: "&inference.NormalLikelihoodDistribution{}"
+    - likelihoodForComp: "&inference.NormalLikelihoodDistribution{AllowDefaultCovarianceFallback: true}"
     - dataComparison: "&inference.DataComparisonIteration{Likelihood: likelihoodForComp}"
 
   simulation:
