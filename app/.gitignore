@@ -1,0 +1,9 @@
+# Codegen output — regenerate with `cd app && go run ./cmd/amr/generate`.
+amr/widget.html
+amr/test.html
+amr/build.sh
+amr/src/
+
+# Local-preview runtime copy — sync from dexetera via:
+#   cp -R $(go env GOPATH)/pkg/mod/github.com/umbralcalc/dexetera@*/runtime ./app/runtime
+runtime/

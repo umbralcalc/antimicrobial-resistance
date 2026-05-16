@@ -8,6 +8,7 @@ require (
 	github.com/akamensky/argparse v1.4.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
+	github.com/umbralcalc/dexetera v0.0.0-20260514181804-bf7e3fcf9d94 // indirect
 	gonum.org/v1/gonum v0.17.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
