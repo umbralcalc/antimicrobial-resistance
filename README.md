@@ -248,6 +248,8 @@ nbs/
 | ECDC Surveillance Atlas (EARS-Net) | Resistance data, 8 species, EU/EEA | Free, downloadable |
 | ESPAUR Reports | Annual UK AMR and prescribing reports | Free PDF + data tables |
 
+UKHSA and OpenPrescribing data is Crown copyright and contains public sector information licensed under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/). The MIT licence above covers this repository's code, not the underlying data.
+
 ---
 
 ## References
