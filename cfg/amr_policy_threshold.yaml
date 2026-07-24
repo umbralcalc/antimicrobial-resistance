@@ -1,25 +1,26 @@
+# Threshold escalation prescribing policy (switches rate when resistance crosses a threshold),
+# written entirely as data. The colonisation SDE and Poisson infection process are the same
+# expressions: translation as amr_simulation.yaml (see its header).
+#
+# The prescribing rate reads the colonisation resistant fraction and escalates when it exceeds
+# resistance_threshold. prescribing and colonisation form a feedback loop; the Go breaks it
+# with lag-1 reads on both sides (each reads the other's previous committed state), so both are
+# upstreams: reads here — no within-step cycle, no deadlock.
 main:
   partitions:
 
-  # Partition 0: Threshold escalation — switch when resistance exceeds 15%
+  # Threshold escalation: switch when resistance exceeds resistance_threshold.
   - name: prescribing
-    iteration: prescribing
     params:
       default_rate: [0.3]
       escalation_rate: [0.05]
       resistance_threshold: [0.15]
-      colonisation_partition: [1]
     init_state_values: [0.3]
     state_history_depth: 1
     seed: 0
-    extra_packages:
-    - github.com/umbralcalc/antimicrobial-resistance/pkg/amr
-    extra_vars:
-    - prescribing: "&amr.ThresholdPrescribingIteration{}"
 
-  # Partition 1: Colonisation dynamics with learned parameters
+  # Two-strain colonisation dynamics with learned parameters. State: [susceptible, resistant].
   - name: colonisation
-    iteration: colonisation
     params:
       community_susceptible_prevalence: [0.15]
       community_resistant_prevalence: [0.1164]
@@ -28,33 +29,73 @@ main:
       selection_coefficient: [0.1351]
       fitness_cost: [0.0170]
       noise_scale: [0.01]
-      prescribing_partition: [0]
     init_state_values: [0.15, 0.05]
     state_history_depth: 1
     seed: 9182
-    extra_packages:
-    - github.com/umbralcalc/antimicrobial-resistance/pkg/amr
-    extra_vars:
-    - colonisation: "&amr.ColonisationDynamicsIteration{}"
 
-  # Partition 2: Infection process
+  # Infection process: Poisson bloodstream-infection counts. State: [susceptible_bsi, resistant_bsi].
   - name: infection
-    iteration: infection
     params:
       infection_probability: [0.01]
       patient_population: [500.0]
-      colonisation_partition: [1]
     init_state_values: [0.0, 0.0]
     state_history_depth: 1
     seed: 3347
-    extra_packages:
-    - github.com/umbralcalc/antimicrobial-resistance/pkg/amr
-    extra_vars:
-    - infection: "&amr.InfectionProcessIteration{}"
+
+  expressions:
+
+  # Reads the colonisation resistant fraction from the previous committed step (lag-1 via
+  # upstreams), matching the Go stateHistories[colonisation].At(0, 1) read.
+  - partition: prescribing
+    fields:
+    - {name: rate}
+    upstreams:
+      colonisation: colonisation
+    outputs:
+    - "where(colonisation[1] > resistance_threshold, escalation_rate, default_rate)"
+
+  - partition: colonisation
+    fields:
+    - {name: susceptible}
+    - {name: resistant}
+    upstreams:
+      prescribing: prescribing
+    bindings:
+    - {name: uncolonised, expr: "max(1 - susceptible - resistant, 0)"}
+    - {name: drift_s, expr: "turnover_rate * (community_susceptible_prevalence - susceptible)
+        + transmission_rate * susceptible * uncolonised
+        - selection_coefficient * prescribing * susceptible
+        + fitness_cost * resistant"}
+    - {name: drift_r, expr: "turnover_rate * (community_resistant_prevalence - resistant)
+        + transmission_rate * resistant * uncolonised
+        + selection_coefficient * prescribing * susceptible
+        - fitness_cost * resistant"}
+    - {name: noise_s, expr: "shared(normal(0, noise_scale * sqrt(max(susceptible, 0)) * sqrt(dt)))"}
+    - {name: noise_r, expr: "shared(normal(0, noise_scale * sqrt(max(resistant, 0)) * sqrt(dt)))"}
+    - {name: raw_s, expr: "max(susceptible + drift_s * dt + noise_s, 0)"}
+    - {name: raw_r, expr: "max(resistant + drift_r * dt + noise_r, 0)"}
+    - {name: total, expr: "raw_s + raw_r"}
+    - {name: scale, expr: "where(total > 1, total, 1)"}
+    outputs:
+    - "raw_s / scale"
+    - "raw_r / scale"
+
+  - partition: infection
+    fields:
+    - {name: susceptible_bsi}
+    - {name: resistant_bsi}
+    upstreams:
+      colonisation: colonisation
+    bindings:
+    - {name: lambda_s, expr: "infection_probability * (patient_population * colonisation[0]) * dt"}
+    - {name: lambda_r, expr: "infection_probability * (patient_population * colonisation[1]) * dt"}
+    outputs:
+    - "shared(poisson(lambda_s))"
+    - "shared(poisson(lambda_r))"
 
   simulation:
-    output_condition: "&simulator.EveryStepOutputCondition{}"
-    output_function: "simulator.NewJsonLogOutputFunction(\"./dat/policy_threshold_output.log\")"
-    termination_condition: "&simulator.NumberOfStepsTerminationCondition{MaxNumberOfSteps: 200}"
-    timestep_function: "&simulator.ConstantTimestepFunction{Stepsize: 1.0}"
+    output_condition: {type: every_step}
+    output_function: {type: json_log, path: "./dat/policy_threshold_output.log"}
+    termination_condition: {type: number_of_steps, max_steps: 200}
+    timestep_function: {type: constant, stepsize: 1.0}
     init_time_value: 0.0

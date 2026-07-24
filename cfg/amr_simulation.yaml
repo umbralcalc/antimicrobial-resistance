@@ -1,24 +1,29 @@
+# Two-strain antimicrobial-resistance model, written entirely as data: a {type: param_values}
+# prescribing input, and expressions: partitions for the colonisation SDE and the Poisson
+# infection process. No Go, no code generation.
+#
+# The colonisation and infection expressions are the faithful translation of
+# amr.ColonisationDynamicsIteration and amr.InfectionProcessIteration — the same
+# Euler-Maruyama drift + sqrt(fraction) demographic noise + simplex renormalisation, and the
+# same lag-1 reads (colonisation reads prescribing, infection reads colonisation, from the
+# previous committed step). This is the same generative core as the stochadex catalogue twin
+# models/antimicrobial-resistance/declarative.yaml. Because the expression evaluator samples
+# from pkg/rng v2 while the Go samples from math/rand v1, the two are the same process drawn
+# from different streams (distributional, not bit-for-bit, equivalence).
 main:
   partitions:
 
-  # Partition 0: Prescribing input — cephalosporin prescribing rate as policy lever
-  # State: [cephalosporin_rate]
+  # Prescribing input: constant cephalosporin prescribing rate.
   - name: prescribing
-    iteration: prescribing
+    iteration: {type: param_values}
     params:
       param_values: [0.3]
     init_state_values: [0.3]
     state_history_depth: 1
     seed: 0
-    extra_packages:
-    - github.com/umbralcalc/stochadex/pkg/general
-    extra_vars:
-    - prescribing: "&general.ParamValuesIteration{}"
 
-  # Partition 1: Two-strain colonisation dynamics (susceptible/resistant E. coli)
-  # State: [susceptible_fraction, resistant_fraction]
+  # Two-strain colonisation dynamics (susceptible/resistant). State: [susceptible, resistant].
   - name: colonisation
-    iteration: colonisation
     params:
       community_susceptible_prevalence: [0.15]
       community_resistant_prevalence: [0.05]
@@ -27,34 +32,66 @@ main:
       selection_coefficient: [0.2]
       fitness_cost: [0.02]
       noise_scale: [0.01]
-      prescribing_partition: [0]
     init_state_values: [0.15, 0.05]
     state_history_depth: 1
     seed: 9182
-    extra_packages:
-    - github.com/umbralcalc/antimicrobial-resistance/pkg/amr
-    extra_vars:
-    - colonisation: "&amr.ColonisationDynamicsIteration{}"
 
-  # Partition 2: Infection process — colonisation to bloodstream infection
-  # State: [susceptible_bsi_count, resistant_bsi_count]
+  # Infection process: Poisson bloodstream-infection counts. State: [susceptible_bsi, resistant_bsi].
   - name: infection
-    iteration: infection
     params:
       infection_probability: [0.01]
       patient_population: [500.0]
-      colonisation_partition: [1]
     init_state_values: [0.0, 0.0]
     state_history_depth: 1
     seed: 3347
-    extra_packages:
-    - github.com/umbralcalc/antimicrobial-resistance/pkg/amr
-    extra_vars:
-    - infection: "&amr.InfectionProcessIteration{}"
+
+  expressions:
+
+  - partition: colonisation
+    fields:
+    - {name: susceptible}
+    - {name: resistant}
+    upstreams:
+      prescribing: prescribing
+    bindings:
+    - {name: uncolonised, expr: "max(1 - susceptible - resistant, 0)"}
+    - {name: drift_s, expr: "turnover_rate * (community_susceptible_prevalence - susceptible)
+        + transmission_rate * susceptible * uncolonised
+        - selection_coefficient * prescribing * susceptible
+        + fitness_cost * resistant"}
+    - {name: drift_r, expr: "turnover_rate * (community_resistant_prevalence - resistant)
+        + transmission_rate * resistant * uncolonised
+        + selection_coefficient * prescribing * susceptible
+        - fitness_cost * resistant"}
+    # Demographic noise scales with sqrt(fraction). Two separate shared() draws in order
+    # (susceptible first) mirror the Go draw order.
+    - {name: noise_s, expr: "shared(normal(0, noise_scale * sqrt(max(susceptible, 0)) * sqrt(dt)))"}
+    - {name: noise_r, expr: "shared(normal(0, noise_scale * sqrt(max(resistant, 0)) * sqrt(dt)))"}
+    - {name: raw_s, expr: "max(susceptible + drift_s * dt + noise_s, 0)"}
+    - {name: raw_r, expr: "max(resistant + drift_r * dt + noise_r, 0)"}
+    # Renormalise onto the simplex only when the step pushed the pair outside it.
+    - {name: total, expr: "raw_s + raw_r"}
+    - {name: scale, expr: "where(total > 1, total, 1)"}
+    outputs:
+    - "raw_s / scale"
+    - "raw_r / scale"
+
+  - partition: infection
+    fields:
+    - {name: susceptible_bsi}
+    - {name: resistant_bsi}
+    upstreams:
+      colonisation: colonisation
+    bindings:
+    - {name: lambda_s, expr: "infection_probability * (patient_population * colonisation[0]) * dt"}
+    - {name: lambda_r, expr: "infection_probability * (patient_population * colonisation[1]) * dt"}
+    outputs:
+    - "shared(poisson(lambda_s))"
+    - "shared(poisson(lambda_r))"
 
   simulation:
-    output_condition: "&simulator.EveryStepOutputCondition{}"
-    output_function: "simulator.NewJsonLogOutputFunction(\"./dat/simulation_output.log\")"
-    termination_condition: "&simulator.NumberOfStepsTerminationCondition{MaxNumberOfSteps: 60}"
-    timestep_function: "&simulator.ConstantTimestepFunction{Stepsize: 1.0}"
+    output_condition: {type: every_step}
+    output_function: {type: json_log, path: "./dat/simulation_output.log"}
+    termination_condition: {type: number_of_steps, max_steps: 60}
+    timestep_function: {type: constant, stepsize: 1.0}
     init_time_value: 0.0
