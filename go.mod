@@ -3,8 +3,8 @@ module github.com/umbralcalc/antimicrobial-resistance
 go 1.25.2
 
 require (
-	github.com/umbralcalc/dexetera v0.0.0-20260514181804-bf7e3fcf9d94
-	github.com/umbralcalc/stochadex v0.13.0
+	github.com/umbralcalc/dexetera v0.0.0-20261008070102-13a58cee6c35
+	github.com/umbralcalc/stochadex v0.20.0
 )
 
 require (
