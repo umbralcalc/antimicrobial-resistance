@@ -30,15 +30,16 @@
 #     forgotten each step.
 #   - memory_depth 40 / window depth 40: one quarterly cycle per comparison window.
 
-data:
-  source:
-    csv:
-      path: ./dat/sbi_inference_series.csv
-      time_column: 0
-      skip_header: true
-      state_columns:
-        observed_resistance: [1]
-        prescribing: [2]
+inputs:
+  data:
+    source:
+      csv:
+        path: ./dat/sbi_inference_series.csv
+        time_column: 0
+        skip_header: true
+        state_columns:
+          observed_resistance: [1]
+          prescribing: [2]
 
 macros:
 - type: posterior_estimation
