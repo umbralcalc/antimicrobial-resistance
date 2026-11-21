@@ -1,85 +1,84 @@
 # Baseline prescribing policy (constant rate), written entirely as data. The colonisation SDE
 # and Poisson infection process are the same expressions: translation as amr_simulation.yaml
 # (see its header); this variant uses the learned colonisation parameters and a longer horizon.
-main:
-  partitions:
+partitions:
 
-  # Baseline policy: constant cephalosporin prescribing rate.
-  - name: prescribing
-    iteration: {type: param_values}
-    params:
-      param_values: [0.3]
-    init_state_values: [0.3]
-    state_history_depth: 1
-    seed: 0
+# Baseline policy: constant cephalosporin prescribing rate.
+- name: prescribing
+  iteration: {type: param_values}
+  params:
+    param_values: [0.3]
+  init_state_values: [0.3]
+  state_history_depth: 1
+  seed: 0
 
-  # Two-strain colonisation dynamics with learned parameters. State: [susceptible, resistant].
-  - name: colonisation
-    params:
-      community_susceptible_prevalence: [0.15]
-      community_resistant_prevalence: [0.1164]
-      turnover_rate: [0.1]
-      transmission_rate: [0.0384]
-      selection_coefficient: [0.1351]
-      fitness_cost: [0.0170]
-      noise_scale: [0.01]
-    init_state_values: [0.15, 0.05]
-    state_history_depth: 1
-    seed: 9182
+# Two-strain colonisation dynamics with learned parameters. State: [susceptible, resistant].
+- name: colonisation
+  params:
+    community_susceptible_prevalence: [0.15]
+    community_resistant_prevalence: [0.1164]
+    turnover_rate: [0.1]
+    transmission_rate: [0.0384]
+    selection_coefficient: [0.1351]
+    fitness_cost: [0.0170]
+    noise_scale: [0.01]
+  init_state_values: [0.15, 0.05]
+  state_history_depth: 1
+  seed: 9182
 
-  # Infection process: Poisson bloodstream-infection counts. State: [susceptible_bsi, resistant_bsi].
-  - name: infection
-    params:
-      infection_probability: [0.01]
-      patient_population: [500.0]
-    init_state_values: [0.0, 0.0]
-    state_history_depth: 1
-    seed: 3347
+# Infection process: Poisson bloodstream-infection counts. State: [susceptible_bsi, resistant_bsi].
+- name: infection
+  params:
+    infection_probability: [0.01]
+    patient_population: [500.0]
+  init_state_values: [0.0, 0.0]
+  state_history_depth: 1
+  seed: 3347
 
-  expressions:
+expressions:
 
-  - partition: colonisation
-    fields:
-    - {name: susceptible}
-    - {name: resistant}
-    upstreams:
-      prescribing: prescribing
-    bindings:
-    - {name: uncolonised, expr: "max(1 - susceptible - resistant, 0)"}
-    - {name: drift_s, expr: "turnover_rate * (community_susceptible_prevalence - susceptible)
-        + transmission_rate * susceptible * uncolonised
-        - selection_coefficient * prescribing * susceptible
-        + fitness_cost * resistant"}
-    - {name: drift_r, expr: "turnover_rate * (community_resistant_prevalence - resistant)
-        + transmission_rate * resistant * uncolonised
-        + selection_coefficient * prescribing * susceptible
-        - fitness_cost * resistant"}
-    - {name: noise_s, expr: "shared(normal(0, noise_scale * sqrt(max(susceptible, 0)) * sqrt(dt)))"}
-    - {name: noise_r, expr: "shared(normal(0, noise_scale * sqrt(max(resistant, 0)) * sqrt(dt)))"}
-    - {name: raw_s, expr: "max(susceptible + drift_s * dt + noise_s, 0)"}
-    - {name: raw_r, expr: "max(resistant + drift_r * dt + noise_r, 0)"}
-    - {name: total, expr: "raw_s + raw_r"}
-    - {name: scale, expr: "where(total > 1, total, 1)"}
-    outputs:
-    - "raw_s / scale"
-    - "raw_r / scale"
+- partition: colonisation
+  fields:
+  - {name: susceptible}
+  - {name: resistant}
+  upstreams:
+    prescribing: prescribing
+  bindings:
+  - {name: uncolonised, expr: "max(1 - susceptible - resistant, 0)"}
+  - {name: drift_s, expr: "turnover_rate * (community_susceptible_prevalence - susceptible)
+      + transmission_rate * susceptible * uncolonised
+      - selection_coefficient * prescribing * susceptible
+      + fitness_cost * resistant"}
+  - {name: drift_r, expr: "turnover_rate * (community_resistant_prevalence - resistant)
+      + transmission_rate * resistant * uncolonised
+      + selection_coefficient * prescribing * susceptible
+      - fitness_cost * resistant"}
+  - {name: noise_s, expr: "shared(normal(0, noise_scale * sqrt(max(susceptible, 0)) * sqrt(dt)))"}
+  - {name: noise_r, expr: "shared(normal(0, noise_scale * sqrt(max(resistant, 0)) * sqrt(dt)))"}
+  - {name: raw_s, expr: "max(susceptible + drift_s * dt + noise_s, 0)"}
+  - {name: raw_r, expr: "max(resistant + drift_r * dt + noise_r, 0)"}
+  - {name: total, expr: "raw_s + raw_r"}
+  - {name: scale, expr: "where(total > 1, total, 1)"}
+  outputs:
+  - "raw_s / scale"
+  - "raw_r / scale"
 
-  - partition: infection
-    fields:
-    - {name: susceptible_bsi}
-    - {name: resistant_bsi}
-    upstreams:
-      colonisation: colonisation
-    bindings:
-    - {name: lambda_s, expr: "infection_probability * (patient_population * colonisation[0]) * dt"}
-    - {name: lambda_r, expr: "infection_probability * (patient_population * colonisation[1]) * dt"}
-    outputs:
-    - "shared(poisson(lambda_s))"
-    - "shared(poisson(lambda_r))"
+- partition: infection
+  fields:
+  - {name: susceptible_bsi}
+  - {name: resistant_bsi}
+  upstreams:
+    colonisation: colonisation
+  bindings:
+  - {name: lambda_s, expr: "infection_probability * (patient_population * colonisation[0]) * dt"}
+  - {name: lambda_r, expr: "infection_probability * (patient_population * colonisation[1]) * dt"}
+  outputs:
+  - "shared(poisson(lambda_s))"
+  - "shared(poisson(lambda_r))"
 
-  simulation:
-    termination_condition: {type: number_of_steps, max_steps: 200}
-    timestep_function: {type: constant, stepsize: 1.0}
-    init_time_value: 0.0
+simulation:
+  termination_condition: {type: number_of_steps, max_steps: 200}
+  timestep_function: {type: constant, stepsize: 1.0}
+  init_time_value: 0.0
 outputs:
 - {name: output, condition: {type: every_step}, function: {type: json_log, path: "./dat/policy_baseline_output.log"}}
